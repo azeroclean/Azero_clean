@@ -1,12 +1,37 @@
 import { Link, useNavigate, useParams } from 'react-router-dom'
-import { ArrowLeft, Clock, CheckCircle2 } from 'lucide-react'
-import { services } from '../data/services'
+import { ArrowLeft, Clock, CheckCircle2, CalendarPlus } from 'lucide-react'
+import { useService } from '../hooks/useService'
+import { useBooking } from '../context/booking-context'
 
 export function ServiceDetail() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
+  const { service, loading } = useService(id)
+  const { toggleService, isSelected } = useBooking()
 
-  const service = services.find((item) => item.id === id)
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-bg text-text">
+        <header className="sticky top-0 z-20 border-b border-border bg-bg/95 backdrop-blur">
+          <div className="mx-auto flex max-w-md items-center gap-3 px-4 py-3">
+            <button
+              type="button"
+              onClick={() => navigate(-1)}
+              className="flex items-center gap-1.5 rounded-full border border-border px-3 py-1.5 text-xs text-text-secondary transition hover:border-primary/60 hover:text-primary"
+            >
+              <ArrowLeft className="h-3.5 w-3.5" />
+              Voltar
+            </button>
+            <span className="text-sm font-medium">Detalhe do serviço</span>
+          </div>
+        </header>
+        <main className="mx-auto flex max-w-md flex-col gap-4 px-4 py-4">
+          <div className="h-56 animate-pulse rounded-3xl border border-border bg-surface" />
+          <div className="h-24 animate-pulse rounded-3xl border border-border bg-surface" />
+        </main>
+      </div>
+    )
+  }
 
   if (!service) {
     return (
@@ -20,10 +45,16 @@ export function ServiceDetail() {
   }
 
   const priceDisplay = service.priceLabel || `A partir de R$ ${service.price.toFixed(2)}`
+  const selected = isSelected(service.id)
+
+  const selectAndSchedule = () => {
+    if (!selected) toggleService(service.id)
+    navigate('/agendar')
+  }
 
   return (
     <div className="min-h-screen bg-bg text-text">
-      <header className="sticky top-0 z-10 border-b border-border bg-bg/95 backdrop-blur">
+      <header className="sticky top-0 z-20 border-b border-border bg-bg/95 backdrop-blur">
         <div className="mx-auto flex max-w-md items-center gap-3 px-4 py-3">
           <button
             type="button"
@@ -37,14 +68,20 @@ export function ServiceDetail() {
         </div>
       </header>
 
-      <main className="mx-auto flex max-w-md flex-col gap-5 px-4 pb-24">
-        <section className="mt-4 overflow-hidden rounded-3xl border border-border bg-surface">
+      <main className="mx-auto flex max-w-md flex-col gap-5 px-4 pb-28">
+        <section className="mt-4 overflow-hidden rounded-3xl border border-border bg-surface shadow-[0_0_80px_-40px_rgba(0,210,255,0.7)]">
           <img
             src={service.image}
             alt={service.title}
             className="h-56 w-full object-cover"
           />
           <div className="flex flex-col gap-4 p-5">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="rounded-full border border-primary/40 bg-primary/10 px-2.5 py-0.5 text-[10px] uppercase tracking-[0.25em] text-primary">
+                {service.category}
+              </span>
+            </div>
+
             <div className="flex flex-col gap-2">
               <h1 className="text-xl font-semibold">{service.title}</h1>
               <div className="flex flex-wrap items-center gap-3 text-sm text-text-secondary">
@@ -58,37 +95,52 @@ export function ServiceDetail() {
 
             <div className="flex flex-col gap-2">
               <h2 className="text-sm font-semibold">Sobre o serviço</h2>
-              <p className="text-sm text-text-secondary leading-relaxed">
+              <p className="text-sm leading-relaxed text-text-secondary">
                 {service.description}
               </p>
             </div>
 
-            <div className="flex flex-col gap-2">
-              <h2 className="text-sm font-semibold">Benefícios</h2>
-              <ul className="flex flex-col gap-2">
-                {service.benefits.map((benefit) => (
-                  <li
-                    key={benefit}
-                    className="flex items-start gap-2 text-sm text-text-secondary"
-                  >
-                    <CheckCircle2 className="mt-0.5 h-4 w-4 text-primary" />
-                    <span>{benefit}</span>
-                  </li>
-                ))}
-              </ul>
-            </div>
+            {service.benefits.length > 0 && (
+              <div className="flex flex-col gap-2">
+                <h2 className="text-sm font-semibold">Benefícios</h2>
+                <ul className="flex flex-col gap-2">
+                  {service.benefits.map((benefit) => (
+                    <li
+                      key={benefit}
+                      className="flex items-start gap-2 text-sm text-text-secondary"
+                    >
+                      <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
+                      <span>{benefit}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
           </div>
         </section>
       </main>
 
-      <footer className="fixed inset-x-0 bottom-0 z-10 border-t border-border bg-bg/95 backdrop-blur">
-        <div className="mx-auto flex max-w-md px-4 py-3">
+      <footer className="fixed inset-x-0 bottom-0 z-20 border-t border-border bg-bg/95 backdrop-blur">
+        <div className="mx-auto flex max-w-md gap-2 px-4 py-3">
           <button
             type="button"
-            onClick={() => navigate('/servicos')}
-            className="flex w-full items-center justify-center gap-2 rounded-2xl bg-primary px-5 py-3 text-sm font-semibold text-black transition hover:bg-primary-600 active:scale-[0.98]"
+            onClick={() => toggleService(service.id)}
+            className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl border transition ${
+              selected
+                ? 'border-primary bg-primary/10 text-primary'
+                : 'border-border text-text-secondary hover:border-primary/60 hover:text-primary'
+            }`}
+            aria-label={selected ? 'Remover serviço' : 'Adicionar serviço'}
           >
-            Selecionar serviço
+            <CheckCircle2 className="h-5 w-5" />
+          </button>
+          <button
+            type="button"
+            onClick={selectAndSchedule}
+            className="flex flex-1 items-center justify-center gap-2 rounded-2xl bg-primary px-5 py-3 text-sm font-semibold text-black transition hover:bg-primary-600 active:scale-[0.98]"
+          >
+            <CalendarPlus className="h-4 w-4" />
+            {selected ? 'Agendar horário' : 'Selecionar e agendar'}
           </button>
         </div>
       </footer>

@@ -10,7 +10,9 @@ import {
   ShieldCheck,
   Droplets,
 } from 'lucide-react'
-import { services } from '../data/services'
+import { useServices } from '../hooks/useServices'
+
+const CURRENT_YEAR = new Date().getFullYear()
 
 const features = [
   {
@@ -31,6 +33,7 @@ const features = [
 ]
 
 export function Home() {
+  const { services, loading } = useServices()
   const whatsappLink = 'https://wa.me/5588994987680'
   const instagramLink = 'https://instagram.com/azeroclean'
   const telLink = 'tel:88994987680'
@@ -119,6 +122,13 @@ export function Home() {
             </Link>
           </div>
           <div className="flex gap-3 overflow-x-auto pb-2 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+            {loading &&
+              Array.from({ length: 3 }).map((_, index) => (
+                <div
+                  key={`skeleton-${index}`}
+                  className="h-72 min-w-[78%] animate-pulse rounded-3xl border border-border bg-surface"
+                />
+              ))}
             {services.map((service) => (
               <article
                 key={service.id}
@@ -216,7 +226,7 @@ export function Home() {
       <footer className="border-t border-border bg-bg/95">
         <div className="mx-auto flex max-w-md flex-col items-center gap-1 px-4 py-5 text-xs text-text-tertiary">
           <span className="uppercase tracking-[0.4em] text-text-secondary">Azero Clean</span>
-          <span>© {new Date().getFullYear()} Azero Clean. Todos os direitos reservados.</span>
+          <span>© {CURRENT_YEAR} Azero Clean. Todos os direitos reservados.</span>
           <span className="text-text-tertiary">Cuidando do seu carro.</span>
         </div>
       </footer>

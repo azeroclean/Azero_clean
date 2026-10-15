@@ -20,7 +20,7 @@ export interface Appointment {
   vehicle_make: string
   vehicle_model: string
   vehicle_plate?: string
-  service_id: string
+  service_ids: string[]
   date: string
   time: string
   status: 'pendente' | 'confirmado' | 'cancelado' | 'concluido'
