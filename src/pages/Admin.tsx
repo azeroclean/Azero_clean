@@ -1,5 +1,5 @@
-import { useMemo, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import { Link, Navigate } from 'react-router-dom'
 import {
   LayoutDashboard,
   Calendar,
@@ -15,35 +15,27 @@ import {
   MessageCircle,
   ChevronRight,
   Inbox,
+  LogOut,
+  AlertTriangle,
+  RefreshCw,
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import { format } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
+import {
+  AdminBrand,
+  AdminNotice,
+  AdminScreen,
+  AdminSpinner,
+  SupabaseNotConfigured,
+  adminButton,
+} from '../components/AdminScreen'
+import { useAdminAuth } from '../hooks/useAdminAuth'
+import { fetchAdminAppointments, signOut, updateAppointmentStatus } from '../lib/admin'
+import type { AdminAppointment, AppointmentStatus as Status } from '../lib/admin'
 
-type Status = 'pendente' | 'confirmado' | 'cancelado' | 'concluido'
 type Tab = 'dashboard' | 'agendamentos' | 'clientes' | 'veiculos'
-
-interface AdminAppointment {
-  id: number
-  client: string
-  service: string
-  date: string
-  time: string
-  status: Status
-  vehicle: string
-  phone: string
-  total: number
-}
-
-// Dados de exemplo enquanto o painel não tem login de administrador.
-const MOCK_APPOINTMENTS: AdminAppointment[] = [
-  { id: 1, client: 'João Silva', service: 'Lavagem Completa', date: '2026-10-17', time: '08:30', status: 'confirmado', vehicle: 'Honda Civic', phone: '(88) 99999-0001', total: 60 },
-  { id: 2, client: 'Maria Santos', service: 'Higienização Interna', date: '2026-10-17', time: '11:00', status: 'pendente', vehicle: 'Toyota Corolla', phone: '(88) 99999-0002', total: 150 },
-  { id: 3, client: 'Pedro Oliveira', service: 'Proteção de Pintura', date: '2026-10-18', time: '14:00', status: 'confirmado', vehicle: 'VW Golf', phone: '(88) 99999-0003', total: 280 },
-  { id: 4, client: 'Ana Costa', service: 'Lavagem Completa', date: '2026-10-18', time: '15:30', status: 'cancelado', vehicle: 'Hyundai HB20', phone: '(88) 99999-0004', total: 60 },
-  { id: 5, client: 'Carlos Lima', service: 'Higienização Interna', date: '2026-10-19', time: '09:30', status: 'pendente', vehicle: 'Fiat Argo', phone: '(88) 99999-0005', total: 150 },
-  { id: 6, client: 'João Silva', service: 'Higienização Interna', date: '2026-10-16', time: '14:00', status: 'concluido', vehicle: 'Honda Civic', phone: '(88) 99999-0001', total: 150 },
-]
+type StatusHandler = (id: string, s: Status) => void
 
 const NAV: { id: Tab; label: string; icon: LucideIcon }[] = [
   { id: 'dashboard', label: 'Início', icon: LayoutDashboard },
@@ -70,14 +62,79 @@ const shortDate = (iso: string) =>
 const waLink = (phone: string) => `https://wa.me/55${phone.replace(/\D/g, '')}`
 
 export function Admin() {
+  const auth = useAdminAuth()
+
+  if (auth.status === 'ready') return <AdminPanel email={auth.email} />
+  if (auth.status === 'signedOut' || auth.status === 'notAdmin') {
+    return <Navigate to="/admin/login" replace />
+  }
+
+  return (
+    <AdminScreen>
+      <AdminBrand />
+      {auth.status === 'unconfigured' && <SupabaseNotConfigured />}
+      {auth.status === 'loading' && <AdminSpinner label="Verificando acesso..." />}
+      {auth.status === 'error' && (
+        <AdminNotice
+          icon={AlertTriangle}
+          tone="danger"
+          title="Erro ao conectar"
+          action={<RetryButton onClick={() => window.location.reload()} />}
+        >
+          {auth.message}
+        </AdminNotice>
+      )}
+    </AdminScreen>
+  )
+}
+
+function AdminPanel({ email }: { email: string }) {
   const [tab, setTab] = useState<Tab>('dashboard')
   const [filter, setFilter] = useState<'todos' | Status>('todos')
   const [query, setQuery] = useState('')
-  const [appointments, setAppointments] = useState(MOCK_APPOINTMENTS)
+  const [appointments, setAppointments] = useState<AdminAppointment[]>([])
+  const [loading, setLoading] = useState(true)
+  const [loadError, setLoadError] = useState<string | null>(null)
+  const [actionError, setActionError] = useState<string | null>(null)
+  const [busyId, setBusyId] = useState<string | null>(null)
   const [now] = useState(() => new Date())
 
-  const setStatus = (id: number, status: Status) =>
-    setAppointments((prev) => prev.map((a) => (a.id === id ? { ...a, status } : a)))
+  const load = useCallback(async () => {
+    setLoading(true)
+    setLoadError(null)
+    try {
+      setAppointments(await fetchAdminAppointments())
+    } catch (error) {
+      setLoadError((error as Error).message)
+    } finally {
+      setLoading(false)
+    }
+  }, [])
+
+  // Primeira carga: o estado inicial já é "carregando", então só grava o resultado.
+  useEffect(() => {
+    let cancelled = false
+    fetchAdminAppointments()
+      .then((data) => !cancelled && setAppointments(data))
+      .catch((error: Error) => !cancelled && setLoadError(error.message))
+      .finally(() => !cancelled && setLoading(false))
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  const setStatus: StatusHandler = async (id, status) => {
+    setBusyId(id)
+    setActionError(null)
+    try {
+      await updateAppointmentStatus(id, status)
+      setAppointments((prev) => prev.map((a) => (a.id === id ? { ...a, status } : a)))
+    } catch (error) {
+      setActionError((error as Error).message)
+    } finally {
+      setBusyId(null)
+    }
+  }
 
   const sorted = useMemo(
     () => [...appointments].sort((a, b) => `${a.date}${a.time}`.localeCompare(`${b.date}${b.time}`)),
@@ -139,6 +196,7 @@ export function Admin() {
     return [...map.values()].sort((a, b) => a.name.localeCompare(b.name))
   }, [appointments])
 
+  const ready = !loadError && !(loading && appointments.length === 0)
   const pendingCount = appointments.filter((a) => a.status === 'pendente').length
   const current = NAV.find((n) => n.id === tab)!
 
@@ -176,6 +234,19 @@ export function Admin() {
           <ExternalLink className="h-4 w-4" />
           Ver site
         </Link>
+        <div className="mt-2 border-t border-border pt-3">
+          <p className="truncate px-3 text-[11px] text-text-tertiary" title={email}>
+            {email}
+          </p>
+          <button
+            type="button"
+            onClick={() => signOut()}
+            className="mt-1 flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-sm text-text-secondary transition hover:bg-red-50 hover:text-red-600"
+          >
+            <LogOut className="h-4 w-4" />
+            Sair
+          </button>
+        </div>
       </aside>
 
       <div className="flex min-w-0 flex-1 flex-col">
@@ -192,18 +263,72 @@ export function Admin() {
                 </p>
               </div>
             </div>
-            <Link
-              to="/"
-              className="flex h-9 w-9 items-center justify-center rounded-full bg-surface-2 text-text-secondary transition hover:text-text lg:hidden"
-              aria-label="Ver site"
-            >
-              <ExternalLink className="h-4 w-4" />
-            </Link>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={load}
+                disabled={loading}
+                className="flex h-9 w-9 items-center justify-center rounded-full bg-surface-2 text-text-secondary transition hover:text-text disabled:opacity-60"
+                aria-label="Atualizar agendamentos"
+                title="Atualizar"
+              >
+                <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
+              </button>
+              <Link
+                to="/"
+                className="flex h-9 w-9 items-center justify-center rounded-full bg-surface-2 text-text-secondary transition hover:text-text lg:hidden"
+                aria-label="Ver site"
+              >
+                <ExternalLink className="h-4 w-4" />
+              </Link>
+              <button
+                type="button"
+                onClick={() => signOut()}
+                className="flex h-9 w-9 items-center justify-center rounded-full bg-surface-2 text-text-secondary transition hover:bg-red-50 hover:text-red-600 lg:hidden"
+                aria-label="Sair"
+                title="Sair"
+              >
+                <LogOut className="h-4 w-4" />
+              </button>
+            </div>
           </div>
         </header>
 
         <main className="mx-auto w-full max-w-6xl flex-1 px-4 pb-28 pt-4 lg:px-8 lg:pb-10 lg:pt-6">
-          {tab === 'dashboard' && (
+          {actionError && (
+            <div
+              className="mb-4 flex items-start gap-3 rounded-2xl bg-red-50 p-4 text-sm text-red-700 ring-1 ring-red-200"
+              role="alert"
+            >
+              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+              <p className="flex-1">Não foi possível alterar o status. {actionError}</p>
+              <button
+                type="button"
+                onClick={() => setActionError(null)}
+                className="shrink-0 text-red-600 hover:text-red-800"
+                aria-label="Fechar aviso"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+          )}
+
+          {loading && appointments.length === 0 && <AdminSpinner label="Carregando agendamentos..." />}
+
+          {loadError && (
+            <div className="mx-auto max-w-md py-6">
+              <AdminNotice
+                icon={AlertTriangle}
+                tone="danger"
+                title="Erro ao carregar agendamentos"
+                action={<RetryButton onClick={load} />}
+              >
+                {loadError}
+              </AdminNotice>
+            </div>
+          )}
+
+          {ready && tab === 'dashboard' && (
             <div className="flex flex-col gap-6">
               <div className="grid grid-cols-2 gap-3 lg:grid-cols-4 lg:gap-4">
                 {stats.map((stat) => (
@@ -225,7 +350,7 @@ export function Admin() {
                     title="Próximos agendamentos"
                     action={{ label: 'Ver todos', onClick: () => setTab('agendamentos') }}
                   />
-                  <AppointmentList items={upcoming.slice(0, 5)} onStatus={setStatus} />
+                  <AppointmentList items={upcoming.slice(0, 5)} onStatus={setStatus} busyId={busyId} />
                 </section>
 
                 <section className="flex flex-col gap-3 lg:col-span-2">
@@ -260,7 +385,7 @@ export function Admin() {
             </div>
           )}
 
-          {tab === 'agendamentos' && (
+          {ready && tab === 'agendamentos' && (
             <div className="flex flex-col gap-4">
               <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
                 <div className="no-scrollbar -mx-4 flex gap-2 overflow-x-auto px-4 lg:mx-0 lg:px-0">
@@ -284,7 +409,7 @@ export function Admin() {
 
               {/* Celular: cards */}
               <div className="lg:hidden">
-                <AppointmentList items={filtered} onStatus={setStatus} />
+                <AppointmentList items={filtered} onStatus={setStatus} busyId={busyId} />
               </div>
 
               {/* Computador: tabela */}
@@ -322,7 +447,7 @@ export function Admin() {
                           </td>
                           <td className="px-5 py-3">
                             <div className="flex justify-end">
-                              <Actions apt={apt} onStatus={setStatus} />
+                              <Actions apt={apt} onStatus={setStatus} busyId={busyId} />
                             </div>
                           </td>
                         </tr>
@@ -334,7 +459,9 @@ export function Admin() {
             </div>
           )}
 
-          {tab === 'clientes' && (
+          {ready && tab === 'clientes' && clients.length === 0 && <Empty message="Nenhum cliente ainda." />}
+
+          {ready && tab === 'clientes' && clients.length > 0 && (
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
               {clients.map((c) => (
                 <div key={c.phone} className="flex items-center gap-3 rounded-2xl bg-surface p-4 shadow-sm">
@@ -362,7 +489,9 @@ export function Admin() {
             </div>
           )}
 
-          {tab === 'veiculos' && (
+          {ready && tab === 'veiculos' && vehicles.length === 0 && <Empty message="Nenhum veículo ainda." />}
+
+          {ready && tab === 'veiculos' && vehicles.length > 0 && (
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
               {vehicles.map((v) => (
                 <div key={`${v.name}-${v.owner}`} className="flex items-center gap-3 rounded-2xl bg-surface p-4 shadow-sm">
@@ -477,14 +606,29 @@ function StatusPill({ status }: { status: Status }) {
   )
 }
 
-function Actions({ apt, onStatus }: { apt: AdminAppointment; onStatus: (id: number, s: Status) => void }) {
+interface ActionProps {
+  onStatus: StatusHandler
+  busyId: string | null
+}
+
+function Actions({ apt, onStatus, busyId }: ActionProps & { apt: AdminAppointment }) {
+  const busy = busyId === apt.id
+  if (busy) {
+    return (
+      <span className="flex h-8 items-center px-3" role="status" aria-label="Salvando">
+        <span className="h-4 w-4 animate-spin rounded-full border-2 border-border border-t-primary" />
+      </span>
+    )
+  }
+  const disabled = busyId !== null
   if (apt.status === 'pendente') {
     return (
       <div className="flex gap-2">
         <button
           type="button"
           onClick={() => onStatus(apt.id, 'confirmado')}
-          className="flex h-8 items-center gap-1 rounded-full bg-primary px-3 text-xs font-semibold text-white transition hover:bg-primary-600"
+          disabled={disabled}
+          className="flex h-8 items-center gap-1 rounded-full bg-primary px-3 text-xs font-semibold text-white transition hover:bg-primary-600 disabled:opacity-50"
         >
           <Check className="h-3.5 w-3.5" strokeWidth={3} />
           Confirmar
@@ -492,7 +636,8 @@ function Actions({ apt, onStatus }: { apt: AdminAppointment; onStatus: (id: numb
         <button
           type="button"
           onClick={() => onStatus(apt.id, 'cancelado')}
-          className="flex h-8 w-8 items-center justify-center rounded-full bg-red-50 text-red-600 transition hover:bg-red-100"
+          disabled={disabled}
+          className="flex h-8 w-8 items-center justify-center rounded-full bg-red-50 text-red-600 transition hover:bg-red-100 disabled:opacity-50"
           aria-label="Cancelar agendamento"
           title="Cancelar"
         >
@@ -506,7 +651,8 @@ function Actions({ apt, onStatus }: { apt: AdminAppointment; onStatus: (id: numb
       <button
         type="button"
         onClick={() => onStatus(apt.id, 'concluido')}
-        className="flex h-8 items-center gap-1 rounded-full bg-ink px-3 text-xs font-semibold text-white transition hover:bg-ink-2"
+        disabled={disabled}
+        className="flex h-8 items-center gap-1 rounded-full bg-ink px-3 text-xs font-semibold text-white transition hover:bg-ink-2 disabled:opacity-50"
       >
         <Check className="h-3.5 w-3.5" />
         Concluir
@@ -516,7 +662,7 @@ function Actions({ apt, onStatus }: { apt: AdminAppointment; onStatus: (id: numb
   return null
 }
 
-function AppointmentList({ items, onStatus }: { items: AdminAppointment[]; onStatus: (id: number, s: Status) => void }) {
+function AppointmentList({ items, onStatus, busyId }: ActionProps & { items: AdminAppointment[] }) {
   if (items.length === 0) return <Empty />
   return (
     <ul className="flex flex-col gap-3">
@@ -547,7 +693,7 @@ function AppointmentList({ items, onStatus }: { items: AdminAppointment[]; onSta
               >
                 <MessageCircle className="h-4 w-4" />
               </a>
-              <Actions apt={apt} onStatus={onStatus} />
+              <Actions apt={apt} onStatus={onStatus} busyId={busyId} />
             </div>
           </div>
         </li>
@@ -556,11 +702,20 @@ function AppointmentList({ items, onStatus }: { items: AdminAppointment[]; onSta
   )
 }
 
-function Empty() {
+function Empty({ message = 'Nenhum agendamento encontrado.' }: { message?: string }) {
   return (
     <div className="flex flex-col items-center gap-2 rounded-2xl bg-surface p-10 text-center shadow-sm">
       <Inbox className="h-6 w-6 text-text-tertiary" />
-      <p className="text-sm text-text-secondary">Nenhum agendamento encontrado.</p>
+      <p className="text-sm text-text-secondary">{message}</p>
     </div>
+  )
+}
+
+function RetryButton({ onClick }: { onClick: () => void }) {
+  return (
+    <button type="button" onClick={onClick} className={`${adminButton} bg-ink text-white hover:bg-ink-2`}>
+      <RefreshCw className="h-4 w-4" />
+      Tentar novamente
+    </button>
   )
 }

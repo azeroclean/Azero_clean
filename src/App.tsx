@@ -22,6 +22,9 @@ const ClientInfo = lazy(() =>
 const Confirmation = lazy(() =>
   import('./pages/Confirmation').then((module) => ({ default: module.Confirmation }))
 )
+const AdminLogin = lazy(() =>
+  import('./pages/AdminLogin').then((module) => ({ default: module.AdminLogin }))
+)
 const Admin = lazy(() =>
   import('./pages/Admin').then((module) => ({ default: module.Admin }))
 )
@@ -43,6 +46,7 @@ const router = createBrowserRouter([
   { path: '/dados', element: <ClientInfo /> },
   { path: '/confirmacao', element: <Confirmation /> },
   { path: '/admin', element: <Admin /> },
+  { path: '/admin/login', element: <AdminLogin /> },
 ])
 
 function App() {
