@@ -1,16 +1,16 @@
-// Edge Function: envia WhatsApp ao confirmar um agendamento.
+// Edge Function: envia WhatsApp ao confirmar um agendamento (Z-API).
 // Deploy: supabase functions deploy send-whatsapp --project-ref <ref>
 // Secrets:
-//   EVOLUTION_API_URL   ex: https://sua-evolution.com
-//   EVOLUTION_API_KEY   a API key (apikey global)
-//   EVOLUTION_INSTANCE  nome da instância conectada via QR (ex: azero)
+//   ZAPI_INSTANCE_ID     ID da instância (painel Z-API)
+//   ZAPI_TOKEN           token da instância
+//   ZAPI_CLIENT_TOKEN    security token da conta (Client-Token)
 // SUPABASE_URL e SUPABASE_SERVICE_ROLE_KEY são injetados automaticamente.
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
-const EVOLUTION_URL = Deno.env.get('EVOLUTION_API_URL') ?? ''
-const EVOLUTION_KEY = Deno.env.get('EVOLUTION_API_KEY') ?? ''
-const EVOLUTION_INSTANCE = Deno.env.get('EVOLUTION_INSTANCE') ?? 'azero'
+const ZAPI_INSTANCE_ID = Deno.env.get('ZAPI_INSTANCE_ID') ?? ''
+const ZAPI_TOKEN = Deno.env.get('ZAPI_TOKEN') ?? ''
+const ZAPI_CLIENT_TOKEN = Deno.env.get('ZAPI_CLIENT_TOKEN') ?? ''
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL') ?? ''
 const SERVICE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
 
@@ -83,16 +83,16 @@ Deno.serve(async (req) => {
       `Qualquer dúvida é só responder aqui. Até breve!`
 
     const response = await fetch(
-      `${EVOLUTION_URL}/message/sendText/${EVOLUTION_INSTANCE}`,
+      `https://api.z-api.io/instances/${ZAPI_INSTANCE_ID}/token/${ZAPI_TOKEN}/send-text`,
       {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          apikey: EVOLUTION_KEY,
+          'Client-Token': ZAPI_CLIENT_TOKEN,
         },
         body: JSON.stringify({
-          number: toWhatsappNumber(data.client_phone),
-          text,
+          phone: toWhatsappNumber(data.client_phone),
+          message: text,
         }),
       }
     )
