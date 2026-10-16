@@ -15,8 +15,12 @@ import { useBooking } from '../context/booking-context'
 import { getServicePriceLabel } from '../data/services'
 import { BUSINESS, getOpenStatus, whatsappLink } from '../data/business'
 import { ServiceImage } from '../components/ServiceImage'
+import { DeveloperCredit } from '../components/DeveloperCredit'
 
 const CURRENT_YEAR = new Date().getFullYear()
+
+const formatPhone = (digits: string) =>
+  digits.replace(/^(\d{2})(\d{5})(\d{4})$/, '($1) $2-$3')
 
 export function Home() {
   const navigate = useNavigate()
@@ -207,9 +211,30 @@ export function Home() {
       </main>
 
       <footer className="border-t border-border">
-        <div className="mx-auto flex max-w-md flex-col items-center gap-1 px-4 py-6 text-xs text-text-secondary">
+        <div className="mx-auto flex max-w-md flex-col items-center gap-3 px-4 py-6 text-xs text-text-secondary">
           <span className="font-bold uppercase tracking-[0.3em] text-text">{BUSINESS.name}</span>
+          <div className="flex flex-wrap items-center justify-center gap-x-4 gap-y-1">
+            <a
+              href={BUSINESS.instagram}
+              target="_blank"
+              rel="noreferrer"
+              className="flex items-center gap-1.5 transition hover:text-text"
+            >
+              <Camera className="h-3.5 w-3.5" />
+              {BUSINESS.instagramHandle}
+            </a>
+            <a
+              href={whatsappLink()}
+              target="_blank"
+              rel="noreferrer"
+              className="flex items-center gap-1.5 transition hover:text-text"
+            >
+              <MessageCircle className="h-3.5 w-3.5" />
+              {formatPhone(BUSINESS.phone)}
+            </a>
+          </div>
           <span>© {CURRENT_YEAR} · Todos os direitos reservados</span>
+          <DeveloperCredit />
         </div>
       </footer>
     </div>
