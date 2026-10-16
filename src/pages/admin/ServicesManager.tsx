@@ -1,8 +1,8 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import type { FormEvent, ReactNode } from 'react'
-import { AlertTriangle, Clock, Loader2, Package, Pencil, Plus, X } from 'lucide-react'
+import { AlertTriangle, Clock, ImagePlus, Loader2, Package, Pencil, Plus, Trash2, X } from 'lucide-react'
 import { AdminNotice, AdminSpinner, adminButton } from '../../components/AdminScreen'
-import { fetchAdminServices, saveService } from '../../lib/admin'
+import { fetchAdminServices, removeServiceImage, saveService, uploadServiceImage } from '../../lib/admin'
 import type { AdminService, ServiceInput } from '../../lib/admin'
 import { formatDuration, formatPrice } from '../../data/services'
 
@@ -126,7 +126,14 @@ export function ServicesManager() {
               className={`flex flex-col gap-3 rounded-2xl bg-surface p-4 shadow-sm ${service.active ? '' : 'opacity-70'}`}
             >
               <div className="flex items-start justify-between gap-3">
-                <div className="min-w-0">
+                <span className="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-surface-2 text-lilac">
+                  {service.imageUrl ? (
+                    <img src={service.imageUrl} alt="" className="h-full w-full object-cover" />
+                  ) : (
+                    <ImagePlus className="h-5 w-5" />
+                  )}
+                </span>
+                <div className="min-w-0 flex-1">
                   <p className="truncate text-sm font-semibold">{service.title}</p>
                   <p className="truncate text-xs text-text-tertiary">{service.category || 'Sem categoria'}</p>
                 </div>
@@ -202,7 +209,18 @@ function ServiceForm({ id, initial, onClose, onSaved }: ServiceFormProps) {
   const [input, setInput] = useState(initial)
   const [benefits, setBenefits] = useState(initial.benefits.join('\n'))
   const [saving, setSaving] = useState(false)
+  const [uploading, setUploading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  // fotos enviadas enquanto o formulário está aberto (para limpar as que não forem usadas)
+  const uploaded = useRef<string[]>([])
+
+  const discardUnused = (keep: string) =>
+    uploaded.current.filter((url) => url !== keep).forEach((url) => removeServiceImage(url))
+
+  const close = () => {
+    discardUnused('')
+    onClose()
+  }
 
   const set = <K extends keyof ServiceInput>(key: K, value: ServiceInput[K]) =>
     setInput((prev) => ({ ...prev, [key]: value }))
@@ -219,6 +237,8 @@ function ServiceForm({ id, initial, onClose, onSaved }: ServiceFormProps) {
         { ...input, benefits: benefits.split('\n').map((b) => b.trim()).filter(Boolean) },
         id
       )
+      discardUnused(input.imageUrl)
+      if (initial.imageUrl && initial.imageUrl !== input.imageUrl) removeServiceImage(initial.imageUrl)
       onSaved()
     } catch (err) {
       setError((err as Error).message)
@@ -241,7 +261,7 @@ function ServiceForm({ id, initial, onClose, onSaved }: ServiceFormProps) {
           <h2 className="text-base font-bold">{id ? 'Editar serviço' : 'Novo serviço'}</h2>
           <button
             type="button"
-            onClick={onClose}
+            onClick={close}
             className="flex h-9 w-9 items-center justify-center rounded-full bg-surface-2 text-text-secondary transition hover:text-text"
             aria-label="Fechar"
           >
@@ -333,15 +353,16 @@ function ServiceForm({ id, initial, onClose, onSaved }: ServiceFormProps) {
             />
           </Field>
 
-          <Field label="Link da imagem (opcional)">
-            <input
-              type="url"
-              value={input.imageUrl}
-              onChange={(e) => set('imageUrl', e.target.value)}
-              className={inputClass}
-              placeholder="https://..."
-            />
-          </Field>
+          <PhotoField
+            url={input.imageUrl}
+            title={input.title}
+            onUploaded={(url) => {
+              uploaded.current.push(url)
+              set('imageUrl', url)
+            }}
+            onRemove={() => set('imageUrl', '')}
+            onUploadingChange={setUploading}
+          />
 
           <label className="flex items-center gap-2 text-sm">
             <input
@@ -363,12 +384,12 @@ function ServiceForm({ id, initial, onClose, onSaved }: ServiceFormProps) {
         <div className="flex justify-end gap-2 border-t border-border px-5 py-4 pb-[max(1rem,env(safe-area-inset-bottom))]">
           <button
             type="button"
-            onClick={onClose}
+            onClick={close}
             className={`${adminButton} bg-surface-2 text-text-secondary hover:text-text`}
           >
             Cancelar
           </button>
-          <button type="submit" disabled={saving} className={`${adminButton} bg-primary text-white hover:bg-primary-600`}>
+          <button type="submit" disabled={saving || uploading} className={`${adminButton} bg-primary text-white hover:bg-primary-600`}>
             {saving && <Loader2 className="h-4 w-4 animate-spin" />}
             Salvar
           </button>
@@ -411,5 +432,107 @@ function PriceInput({
         className={inputClass}
       />
     </Field>
+  )
+}
+
+interface PhotoFieldProps {
+  url: string
+  title: string
+  onUploaded: (url: string) => void
+  onRemove: () => void
+  onUploadingChange: (uploading: boolean) => void
+}
+
+function PhotoField({ url, title, onUploaded, onRemove, onUploadingChange }: PhotoFieldProps) {
+  const inputRef = useRef<HTMLInputElement>(null)
+  const [uploading, setUploading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  const handleFile = async (file: File | undefined) => {
+    if (!file) return
+    setUploading(true)
+    onUploadingChange(true)
+    setError(null)
+    try {
+      onUploaded(await uploadServiceImage(file))
+    } catch (err) {
+      setError((err as Error).message)
+    } finally {
+      setUploading(false)
+      onUploadingChange(false)
+      if (inputRef.current) inputRef.current.value = ''
+    }
+  }
+
+  return (
+    <div className="flex flex-col gap-1.5">
+      <span className="text-xs font-medium text-text-secondary">Foto do serviço</span>
+      <input
+        ref={inputRef}
+        type="file"
+        accept="image/jpeg,image/png,image/webp"
+        className="hidden"
+        onChange={(e) => handleFile(e.target.files?.[0])}
+      />
+
+      {url ? (
+        <div className="relative overflow-hidden rounded-2xl bg-ink">
+          <img src={url} alt={title || 'Foto do serviço'} className="h-44 w-full object-cover" />
+          {uploading && <UploadOverlay />}
+          <div className="absolute bottom-2 right-2 flex gap-2">
+            <button
+              type="button"
+              onClick={() => inputRef.current?.click()}
+              disabled={uploading}
+              className="flex h-8 items-center gap-1 rounded-full bg-surface px-3 text-xs font-semibold text-text shadow-sm transition hover:bg-surface-2 disabled:opacity-60"
+            >
+              <ImagePlus className="h-3.5 w-3.5" />
+              Trocar
+            </button>
+            <button
+              type="button"
+              onClick={onRemove}
+              disabled={uploading}
+              className="flex h-8 w-8 items-center justify-center rounded-full bg-surface text-red-600 shadow-sm transition hover:bg-red-50 disabled:opacity-60"
+              aria-label="Remover foto"
+            >
+              <Trash2 className="h-3.5 w-3.5" />
+            </button>
+          </div>
+        </div>
+      ) : (
+        <button
+          type="button"
+          onClick={() => inputRef.current?.click()}
+          disabled={uploading}
+          className="relative flex h-32 flex-col items-center justify-center gap-1.5 overflow-hidden rounded-2xl border-2 border-dashed border-border bg-surface-2 text-text-secondary transition hover:border-primary/60 hover:text-text"
+        >
+          {uploading ? (
+            <UploadOverlay />
+          ) : (
+            <>
+              <ImagePlus className="h-6 w-6 text-lilac" />
+              <span className="text-sm font-semibold">Enviar foto</span>
+              <span className="text-[11px] text-text-tertiary">JPG, PNG ou WebP · tire na hora ou escolha da galeria</span>
+            </>
+          )}
+        </button>
+      )}
+
+      {error && (
+        <p className="rounded-xl bg-red-50 px-3 py-2 text-xs font-medium text-red-600" role="alert">
+          {error}
+        </p>
+      )}
+    </div>
+  )
+}
+
+function UploadOverlay() {
+  return (
+    <span className="absolute inset-0 flex items-center justify-center gap-2 bg-surface/80 text-xs font-semibold text-text">
+      <Loader2 className="h-4 w-4 animate-spin" />
+      Enviando foto...
+    </span>
   )
 }

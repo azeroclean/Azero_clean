@@ -270,3 +270,62 @@ export async function removeTimeSlot(id: string): Promise<void> {
   if (error) throw new Error(error.message)
   if (!data || data.length === 0) throw new Error('Sem permissão para remover este horário.')
 }
+
+// ------------------------------------------------------------
+// Fotos dos serviços (Supabase Storage)
+// ------------------------------------------------------------
+
+const IMAGE_BUCKET = 'service-images'
+const MAX_IMAGE_SIDE = 1600
+
+// Reduz a foto (celulares geram arquivos de vários MB) e converte para WebP.
+async function compressImage(file: File): Promise<Blob> {
+  const bitmap = await createImageBitmap(file)
+  const scale = Math.min(1, MAX_IMAGE_SIDE / Math.max(bitmap.width, bitmap.height))
+  const canvas = document.createElement('canvas')
+  canvas.width = Math.round(bitmap.width * scale)
+  canvas.height = Math.round(bitmap.height * scale)
+  canvas.getContext('2d')?.drawImage(bitmap, 0, 0, canvas.width, canvas.height)
+  bitmap.close()
+
+  const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/webp', 0.85))
+  return blob ?? file
+}
+
+export async function uploadServiceImage(file: File): Promise<string> {
+  if (!file.type.startsWith('image/')) throw new Error('Escolha um arquivo de imagem.')
+
+  const supabase = await getClient()
+  const blob = await compressImage(file)
+  const ext = blob.type === 'image/webp' ? 'webp' : (file.name.split('.').pop() ?? 'jpg')
+  const path = `${crypto.randomUUID()}.${ext}`
+
+  const { error } = await supabase.storage
+    .from(IMAGE_BUCKET)
+    .upload(path, blob, { contentType: blob.type || file.type, cacheControl: '31536000' })
+
+  if (error) {
+    throw new Error(
+      /bucket not found/i.test(error.message)
+        ? 'O local das fotos ainda não existe. Rode supabase/imagens-servicos.sql no Supabase.'
+        : /row-level security|unauthorized/i.test(error.message)
+          ? 'Sem permissão para enviar fotos. Rode supabase/imagens-servicos.sql no Supabase.'
+          : error.message
+    )
+  }
+
+  return supabase.storage.from(IMAGE_BUCKET).getPublicUrl(path).data.publicUrl
+}
+
+// Apaga uma foto antiga do bucket (só se ela foi enviada pelo painel).
+export async function removeServiceImage(url: string): Promise<void> {
+  const marker = `/storage/v1/object/public/${IMAGE_BUCKET}/`
+  const index = url.indexOf(marker)
+  if (index === -1) return
+  try {
+    const supabase = await getClient()
+    await supabase.storage.from(IMAGE_BUCKET).remove([url.slice(index + marker.length)])
+  } catch {
+    // não impede salvar o serviço
+  }
+}
