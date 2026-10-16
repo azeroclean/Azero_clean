@@ -15,6 +15,9 @@ create table if not exists public.services (
   duration text not null default '',
   price numeric(10, 2) not null default 0,
   price_label text,
+  price_moto numeric(10, 2),
+  price_carro numeric(10, 2),
+  price_caminhonete numeric(10, 2),
   category text not null default '',
   image_url text not null default '',
   benefits text[] not null default '{}',
@@ -30,6 +33,8 @@ create table if not exists public.appointments (
   client_name text not null,
   client_phone text not null,
   client_email text,
+  vehicle_type text not null default 'carro'
+    check (vehicle_type in ('moto', 'carro', 'caminhonete')),
   vehicle_make text not null,
   vehicle_model text not null,
   vehicle_plate text,

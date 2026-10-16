@@ -1,5 +1,6 @@
-import { services as fallbackServices } from '../data/services'
+import { services as fallbackServices, formatPrice } from '../data/services'
 import type { Service } from '../data/services'
+import type { VehicleType } from '../data/vehicles'
 
 const FALLBACK_IMAGE = '/images/hero.png'
 
@@ -7,6 +8,7 @@ export interface NewAppointment {
   client_name: string
   client_phone: string
   client_email?: string | null
+  vehicle_type: VehicleType
   vehicle_make: string
   vehicle_model: string
   vehicle_plate?: string | null
@@ -24,6 +26,9 @@ interface ServiceRow {
   duration: string | null
   price: number | string | null
   price_label: string | null
+  price_moto: number | string | null
+  price_carro: number | string | null
+  price_caminhonete: number | string | null
   category: string | null
   image_url: string | null
   benefits: string[] | null
@@ -37,8 +42,11 @@ async function getClient() {
   return supabase
 }
 
-const formatPrice = (price: number) =>
-  price.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
+const toNumber = (value: number | string | null | undefined): number | undefined => {
+  if (value === null || value === undefined || value === '') return undefined
+  const parsed = Number(value)
+  return Number.isNaN(parsed) ? undefined : parsed
+}
 
 function mapRow(row: ServiceRow): Service {
   const price = Number(row.price ?? 0)
@@ -52,6 +60,11 @@ function mapRow(row: ServiceRow): Service {
     category: row.category ?? '',
     image: row.image_url || FALLBACK_IMAGE,
     benefits: row.benefits ?? [],
+    prices: {
+      moto: toNumber(row.price_moto),
+      carro: toNumber(row.price_carro),
+      caminhonete: toNumber(row.price_caminhonete),
+    },
   }
 }
 
@@ -92,6 +105,25 @@ export async function fetchServiceById(id: string): Promise<Service | null> {
     return mapRow(data as ServiceRow)
   } catch {
     return fallback
+  }
+}
+
+export async function fetchBookedSlots(date: string): Promise<string[]> {
+  if (!isConfigured()) return []
+
+  try {
+    const supabase = await getClient()
+    const { data, error } = await supabase
+      .from('appointments')
+      .select('time')
+      .eq('date', date)
+      .neq('status', 'cancelado')
+
+    if (error || !data) return []
+
+    return [...new Set((data as { time: string }[]).map((row) => row.time))]
+  } catch {
+    return []
   }
 }
 

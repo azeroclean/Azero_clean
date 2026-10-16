@@ -1,12 +1,22 @@
 import { Link, useLocation } from 'react-router-dom'
-import { CheckCircle2, MessageCircle, CalendarDays, Clock, Home } from 'lucide-react'
+import {
+  CheckCircle2,
+  MessageCircle,
+  CalendarDays,
+  Clock,
+  Home,
+  Car,
+} from 'lucide-react'
 import { format } from 'date-fns'
+import type { VehicleType } from '../data/vehicles'
+import { VEHICLE_LABELS } from '../data/vehicles'
 
 interface ConfirmationState {
   name: string
   date: string
   time: string
   total: number
+  vehicleType: VehicleType
   services: string[]
 }
 
@@ -54,6 +64,10 @@ export function Confirmation() {
               <div className="flex items-center gap-2 text-sm text-text-secondary">
                 <Clock className="h-4 w-4 text-primary" />
                 {state.time}
+              </div>
+              <div className="flex items-center gap-2 text-sm text-text-secondary">
+                <Car className="h-4 w-4 text-primary" />
+                {VEHICLE_LABELS[state.vehicleType]}
               </div>
               <div className="mt-1 flex flex-col gap-1.5 border-t border-border pt-3">
                 {state.services.map((service) => (

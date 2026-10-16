@@ -1,4 +1,6 @@
-﻿export interface Service {
+﻿import type { VehicleType } from './vehicles'
+
+export interface Service {
   id: string
   title: string
   description: string
@@ -8,6 +10,28 @@
   category: string
   image: string
   benefits: string[]
+  prices?: Partial<Record<VehicleType, number>>
+}
+
+export const formatPrice = (value: number) =>
+  value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
+
+export function getServicePrice(
+  service: Service,
+  vehicleType: VehicleType | null
+): number {
+  if (vehicleType) {
+    const specific = service.prices?.[vehicleType]
+    if (specific != null) return specific
+  }
+  return service.price
+}
+
+export function getServicePriceLabel(
+  service: Service,
+  vehicleType: VehicleType | null
+): string {
+  return formatPrice(getServicePrice(service, vehicleType))
 }
 
 export const services: Service[] = [

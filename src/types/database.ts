@@ -17,6 +17,7 @@ export interface Appointment {
   client_name: string
   client_phone: string
   client_email?: string
+  vehicle_type: 'moto' | 'carro' | 'caminhonete'
   vehicle_make: string
   vehicle_model: string
   vehicle_plate?: string

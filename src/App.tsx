@@ -4,6 +4,9 @@ import { Home } from './pages/Home'
 import { BookingProvider } from './context/BookingProvider'
 import './index.css'
 
+const VehicleType = lazy(() =>
+  import('./pages/VehicleType').then((module) => ({ default: module.VehicleType }))
+)
 const Services = lazy(() =>
   import('./pages/Services').then((module) => ({ default: module.Services }))
 )
@@ -33,6 +36,7 @@ function RouteFallback() {
 
 const router = createBrowserRouter([
   { path: '/', element: <Home /> },
+  { path: '/veiculo', element: <VehicleType /> },
   { path: '/servicos', element: <Services /> },
   { path: '/servico/:id', element: <ServiceDetail /> },
   { path: '/agendar', element: <Schedule /> },

@@ -106,7 +106,7 @@ export function Home() {
           </div>
 
           <Link
-            to="/servicos"
+            to="/veiculo"
             className="group flex w-full items-center justify-center gap-2 rounded-2xl bg-primary px-5 py-3 text-sm font-semibold text-black transition hover:bg-primary-600 active:scale-[0.98]"
           >
             AGENDAR HORÁRIO

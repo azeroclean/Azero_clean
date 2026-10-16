@@ -1,15 +1,21 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { X, Search, ArrowRight, Clock, Check, Sparkles } from 'lucide-react'
 import { useServices } from '../hooks/useServices'
 import { useBooking } from '../context/booking-context'
 import { FlowHeader } from '../components/FlowHeader'
+import { getServicePrice, getServicePriceLabel } from '../data/services'
+import { VEHICLE_LABELS } from '../data/vehicles'
 
 export function Services() {
   const navigate = useNavigate()
   const { services, loading } = useServices()
-  const { selectedIds, toggleService } = useBooking()
+  const { vehicleType, selectedIds, toggleService } = useBooking()
   const [query, setQuery] = useState('')
+
+  useEffect(() => {
+    if (!vehicleType) navigate('/veiculo', { replace: true })
+  }, [vehicleType, navigate])
 
   const filtered = useMemo(
     () =>
@@ -24,15 +30,30 @@ export function Services() {
     [services, selectedIds]
   )
 
-  const total = selectedServices.reduce((acc, service) => acc + service.price, 0)
+  const total = selectedServices.reduce(
+    (acc, service) => acc + getServicePrice(service, vehicleType),
+    0
+  )
   const count = selectedIds.length
 
   return (
     <div className="min-h-screen bg-bg text-text">
-      <FlowHeader step={1} title="Escolha os serviços" />
+      <FlowHeader step={2} title="Escolha os serviços" />
 
       <main className="mx-auto flex max-w-md flex-col gap-4 px-4 pb-40">
         <div className="mt-4 flex flex-col gap-1.5">
+          <div className="flex items-center gap-2 text-xs text-text-tertiary">
+            <span className="rounded-full border border-primary/40 bg-primary/10 px-2.5 py-0.5 text-[10px] uppercase tracking-[0.2em] text-primary">
+              {vehicleType ? VEHICLE_LABELS[vehicleType] : ''}
+            </span>
+            <button
+              type="button"
+              onClick={() => navigate('/veiculo')}
+              className="font-medium text-primary"
+            >
+              trocar
+            </button>
+          </div>
           <h1 className="text-base font-semibold">Quais serviços você deseja?</h1>
           <p className="text-sm text-text-secondary">
             Selecione um ou mais serviços para agendar.
@@ -127,7 +148,7 @@ export function Services() {
 
                     <div className="mt-auto flex items-center justify-between">
                       <span className="text-sm font-semibold text-primary">
-                        {service.priceLabel ?? `R$ ${service.price.toFixed(2)}`}
+                        {getServicePriceLabel(service, vehicleType)}
                       </span>
                     </div>
                     <button
@@ -160,7 +181,10 @@ export function Services() {
             <span>
               Total:{' '}
               <span className="font-semibold text-primary">
-                R$ {total.toFixed(2)}
+                {total.toLocaleString('pt-BR', {
+                  style: 'currency',
+                  currency: 'BRL',
+                })}
               </span>
             </span>
           </div>

@@ -1,7 +1,7 @@
 import { ArrowLeft, Check } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 
-const FLOW_STEPS = ['Serviços', 'Data', 'Dados'] as const
+const FLOW_STEPS = ['Veículo', 'Serviços', 'Data', 'Dados'] as const
 
 interface FlowHeaderProps {
   step: number

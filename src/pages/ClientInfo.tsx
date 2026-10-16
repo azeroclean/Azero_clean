@@ -16,6 +16,8 @@ import { useServices } from '../hooks/useServices'
 import { useBooking } from '../context/booking-context'
 import { FlowHeader } from '../components/FlowHeader'
 import { createAppointment } from '../lib/services'
+import { getServicePrice } from '../data/services'
+import { VEHICLE_LABELS } from '../data/vehicles'
 
 interface FormState {
   name: string
@@ -49,7 +51,7 @@ function formatPhone(value: string) {
 export function ClientInfo() {
   const navigate = useNavigate()
   const { services } = useServices()
-  const { selectedIds, date, time, reset } = useBooking()
+  const { vehicleType, selectedIds, date, time, reset } = useBooking()
 
   const [form, setForm] = useState<FormState>(EMPTY_FORM)
   const [submitting, setSubmitting] = useState(false)
@@ -59,20 +61,23 @@ export function ClientInfo() {
     () => services.filter((service) => selectedIds.includes(service.id)),
     [services, selectedIds]
   )
-  const total = selectedServices.reduce((acc, service) => acc + service.price, 0)
+  const total = selectedServices.reduce(
+    (acc, service) => acc + getServicePrice(service, vehicleType),
+    0
+  )
 
   useEffect(() => {
-    if (selectedIds.length === 0 || !date || !time) {
-      navigate('/servicos', { replace: true })
+    if (!vehicleType || selectedIds.length === 0 || !date || !time) {
+      navigate('/veiculo', { replace: true })
     }
-  }, [selectedIds.length, date, time, navigate])
+  }, [vehicleType, selectedIds.length, date, time, navigate])
 
   const update = (field: keyof FormState, value: string) => {
     setForm((prev) => ({ ...prev, [field]: value }))
   }
 
-  const handleSubmit = async (event: React.FormEvent) => {
-    event.preventDefault()
+  const handleSubmit = async (event?: React.FormEvent) => {
+    event?.preventDefault()
     setError(null)
 
     if (!form.name.trim() || !form.phone.trim() || !form.make.trim() || !form.model.trim()) {
@@ -80,8 +85,8 @@ export function ClientInfo() {
       return
     }
 
-    if (!date || !time) {
-      setError('Selecione a data e o horário.')
+    if (!vehicleType || !date || !time) {
+      setError('Volte e selecione tipo de veículo, data e horário.')
       return
     }
 
@@ -92,6 +97,7 @@ export function ClientInfo() {
         client_name: form.name.trim(),
         client_phone: form.phone.trim(),
         client_email: form.email.trim() || null,
+        vehicle_type: vehicleType,
         vehicle_make: form.make.trim(),
         vehicle_model: form.model.trim(),
         vehicle_plate: form.plate.trim() || null,
@@ -107,6 +113,7 @@ export function ClientInfo() {
         date,
         time,
         total,
+        vehicleType,
         services: selectedServices.map((service) => service.title),
       }
 
@@ -123,7 +130,7 @@ export function ClientInfo() {
 
   return (
     <div className="min-h-screen bg-bg text-text">
-      <FlowHeader step={3} title="Seus dados" />
+      <FlowHeader step={4} title="Seus dados" />
 
       <form
         onSubmit={handleSubmit}
@@ -167,9 +174,16 @@ export function ClientInfo() {
         </section>
 
         <section className="flex flex-col gap-3 rounded-3xl border border-border bg-surface p-4">
-          <h2 className="text-xs font-semibold uppercase tracking-[0.2em] text-text-tertiary">
-            Veículo
-          </h2>
+          <div className="flex items-center justify-between">
+            <h2 className="text-xs font-semibold uppercase tracking-[0.2em] text-text-tertiary">
+              Veículo
+            </h2>
+            {vehicleType && (
+              <span className="rounded-full border border-primary/40 bg-primary/10 px-2.5 py-0.5 text-[10px] uppercase tracking-[0.2em] text-primary">
+                {VEHICLE_LABELS[vehicleType]}
+              </span>
+            )}
+          </div>
 
           <div className="grid grid-cols-2 gap-3">
             <Field
@@ -218,7 +232,12 @@ export function ClientInfo() {
             {selectedServices.map((service) => (
               <li key={service.id} className="flex justify-between text-text-secondary">
                 <span>{service.title}</span>
-                <span>{service.priceLabel ?? `R$ ${service.price.toFixed(2)}`}</span>
+                <span>
+                  {getServicePrice(service, vehicleType).toLocaleString('pt-BR', {
+                    style: 'currency',
+                    currency: 'BRL',
+                  })}
+                </span>
               </li>
             ))}
           </ul>
@@ -228,7 +247,9 @@ export function ClientInfo() {
                 ? `${format(new Date(`${date}T00:00:00`), 'dd/MM/yyyy')} às ${time}`
                 : ''}
             </span>
-            <span className="font-semibold text-primary">R$ {total.toFixed(2)}</span>
+            <span className="font-semibold text-primary">
+              {total.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+            </span>
           </div>
         </section>
 
@@ -244,7 +265,7 @@ export function ClientInfo() {
         <div className="mx-auto flex max-w-md px-4 py-3">
           <button
             type="button"
-            onClick={handleSubmit}
+            onClick={() => handleSubmit()}
             disabled={submitting}
             className="flex w-full items-center justify-center gap-2 rounded-2xl bg-primary px-5 py-3 text-sm font-semibold text-black transition hover:bg-primary-600 disabled:cursor-not-allowed disabled:opacity-60"
           >

@@ -2,12 +2,14 @@ import { Link, useNavigate, useParams } from 'react-router-dom'
 import { ArrowLeft, Clock, CheckCircle2, CalendarPlus } from 'lucide-react'
 import { useService } from '../hooks/useService'
 import { useBooking } from '../context/booking-context'
+import { getServicePriceLabel } from '../data/services'
+import { VEHICLE_LABELS } from '../data/vehicles'
 
 export function ServiceDetail() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
   const { service, loading } = useService(id)
-  const { toggleService, isSelected } = useBooking()
+  const { vehicleType, toggleService, isSelected } = useBooking()
 
   if (loading) {
     return (
@@ -44,12 +46,12 @@ export function ServiceDetail() {
     )
   }
 
-  const priceDisplay = service.priceLabel || `A partir de R$ ${service.price.toFixed(2)}`
+  const priceDisplay = getServicePriceLabel(service, vehicleType)
   const selected = isSelected(service.id)
 
   const selectAndSchedule = () => {
     if (!selected) toggleService(service.id)
-    navigate('/agendar')
+    navigate(vehicleType ? '/agendar' : '/veiculo')
   }
 
   return (
@@ -80,6 +82,11 @@ export function ServiceDetail() {
               <span className="rounded-full border border-primary/40 bg-primary/10 px-2.5 py-0.5 text-[10px] uppercase tracking-[0.25em] text-primary">
                 {service.category}
               </span>
+              {vehicleType && (
+                <span className="rounded-full border border-accent/40 bg-accent/10 px-2.5 py-0.5 text-[10px] uppercase tracking-[0.25em] text-accent">
+                  {VEHICLE_LABELS[vehicleType]}
+                </span>
+              )}
             </div>
 
             <div className="flex flex-col gap-2">
