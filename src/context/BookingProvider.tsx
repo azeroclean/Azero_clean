@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
+import { format } from 'date-fns'
 import { BookingContext } from './booking-context'
 import type { BookingState } from './booking-context'
 import type { VehicleType } from '../data/vehicles'
@@ -7,7 +8,7 @@ import type { VehicleType } from '../data/vehicles'
 const STORAGE_KEY = 'azero-clean:booking'
 
 const EMPTY_STATE: BookingState = {
-  vehicleType: null,
+  vehicleType: 'carro',
   selectedIds: [],
   date: null,
   time: null,
@@ -23,14 +24,18 @@ function readStoredState(): BookingState {
     if (!raw) return EMPTY_STATE
 
     const parsed = JSON.parse(raw) as Partial<BookingState>
+    // descarta datas que já passaram (estado salvo de uma visita anterior)
+    const todayIso = format(new Date(), 'yyyy-MM-dd')
+    const date =
+      typeof parsed.date === 'string' && parsed.date >= todayIso ? parsed.date : null
     return {
       vehicleType:
         parsed.vehicleType && VEHICLE_TYPES.includes(parsed.vehicleType)
           ? parsed.vehicleType
-          : null,
+          : EMPTY_STATE.vehicleType,
       selectedIds: Array.isArray(parsed.selectedIds) ? parsed.selectedIds : [],
-      date: typeof parsed.date === 'string' ? parsed.date : null,
-      time: typeof parsed.time === 'string' ? parsed.time : null,
+      date,
+      time: date && typeof parsed.time === 'string' ? parsed.time : null,
     }
   } catch {
     return EMPTY_STATE

@@ -1,78 +1,131 @@
-import { ArrowLeft, Check } from 'lucide-react'
+import { ArrowLeft, ArrowRight, Check, Loader2, X } from 'lucide-react'
+import type { ReactNode } from 'react'
 import { useNavigate } from 'react-router-dom'
 
-const FLOW_STEPS = ['Veículo', 'Serviços', 'Data', 'Dados'] as const
+const FLOW_STEPS = ['Serviços', 'Data', 'Dados', 'Confirmação'] as const
 
 interface FlowHeaderProps {
   step: number
-  onBack?: () => void
-  title?: string
+  title: string
+  subtitle?: string
 }
 
-export function FlowHeader({ step, onBack, title }: FlowHeaderProps) {
+export function FlowHeader({ step, title, subtitle }: FlowHeaderProps) {
   const navigate = useNavigate()
-  const goBack = onBack ?? (() => navigate(-1))
 
   return (
-    <header className="sticky top-0 z-20 border-b border-border bg-bg/95 backdrop-blur">
-      <div className="mx-auto flex max-w-md items-center justify-between px-4 py-3">
+    <header className="sticky top-0 z-20 border-b border-border bg-surface">
+      <div className="mx-auto flex max-w-md items-start justify-between gap-3 px-4 pt-4">
+        <div className="min-w-0">
+          <h1 className="text-lg font-semibold leading-tight text-text">{title}</h1>
+          {subtitle && <p className="mt-0.5 text-xs text-lilac">{subtitle}</p>}
+        </div>
         <button
           type="button"
-          onClick={goBack}
-          className="flex items-center gap-1.5 rounded-full border border-border px-3 py-1.5 text-xs text-text-secondary transition hover:border-primary/60 hover:text-primary"
+          onClick={() => navigate('/')}
+          className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border-2 border-surface-2 text-text-tertiary transition hover:border-border hover:text-text"
+          aria-label="Fechar agendamento"
         >
-          <ArrowLeft className="h-3.5 w-3.5" />
-          Voltar
+          <X className="h-4 w-4" />
         </button>
-        <span className="text-xs font-medium text-text-secondary">
-          {title ?? 'Agendamento'}
-        </span>
-        <span className="text-xs text-text-tertiary">
-          Passo {step} de {FLOW_STEPS.length}
-        </span>
       </div>
 
-      <div className="mx-auto flex max-w-md items-center gap-2 px-4 pb-3">
+      <ol className="mx-auto flex max-w-md items-center px-8 py-4" aria-label="Etapas">
         {FLOW_STEPS.map((label, index) => {
           const position = index + 1
           const done = position < step
           const active = position === step
 
           return (
-            <div key={label} className="flex flex-1 items-center gap-2">
-              <div className="flex flex-1 flex-col gap-1.5">
-                <div
-                  className={`flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-[0.15em] ${
-                    active
-                      ? 'text-primary'
-                      : done
-                      ? 'text-accent'
-                      : 'text-text-tertiary'
-                  }`}
-                >
-                  <span
-                    className={`flex h-4 w-4 items-center justify-center rounded-full border text-[9px] ${
-                      active
-                        ? 'border-primary bg-primary text-black'
-                        : done
-                        ? 'border-accent bg-accent/15 text-accent'
-                        : 'border-border text-text-tertiary'
-                    }`}
-                  >
-                    {done ? <Check className="h-2.5 w-2.5" /> : position}
-                  </span>
-                  {label}
-                </div>
-                <div
-                  className={`h-1 rounded-full transition-all ${
-                    active ? 'bg-primary' : done ? 'bg-accent' : 'bg-border'
+            <li key={label} className="flex flex-1 items-center last:flex-none">
+              <span
+                title={label}
+                aria-current={active ? 'step' : undefined}
+                className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full border-2 text-[11px] font-semibold transition ${
+                  active
+                    ? 'border-primary bg-primary text-white'
+                    : done
+                    ? 'border-primary bg-surface text-primary'
+                    : 'border-border bg-surface text-text-secondary'
+                }`}
+              >
+                {done ? <Check className="h-4 w-4" strokeWidth={3} /> : position}
+              </span>
+              {position < FLOW_STEPS.length && (
+                <span
+                  className={`mx-1 h-0.5 flex-1 rounded-full transition ${
+                    done ? 'bg-primary' : 'bg-border'
                   }`}
                 />
-              </div>
-            </div>
+              )}
+            </li>
           )
         })}
-      </div>
+      </ol>
     </header>
+  )
+}
+
+interface FlowFooterProps {
+  summary?: ReactNode
+  onBack?: () => void
+  onNext: () => void
+  nextLabel?: string
+  disabled?: boolean
+  loading?: boolean
+}
+
+export function FlowFooter({
+  summary,
+  onBack,
+  onNext,
+  nextLabel = 'Continuar',
+  disabled,
+  loading,
+}: FlowFooterProps) {
+  const navigate = useNavigate()
+
+  return (
+    <footer className="fixed inset-x-0 bottom-0 z-20 border-t border-border bg-surface pb-[env(safe-area-inset-bottom)] shadow-[0_-12px_30px_-20px_rgba(21,23,34,0.25)]">
+      <div className="mx-auto flex max-w-md flex-col gap-3 px-4 py-3">
+        {summary && <div className="text-center">{summary}</div>}
+        <div className="flex items-center gap-3">
+          <button
+            type="button"
+            onClick={onBack ?? (() => navigate(-1))}
+            className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-ink text-white transition hover:bg-ink-2 active:scale-95"
+            aria-label="Voltar"
+          >
+            <ArrowLeft className="h-5 w-5" />
+          </button>
+          <button
+            type="button"
+            onClick={onNext}
+            disabled={disabled || loading}
+            className="flex h-12 flex-1 items-center justify-between rounded-full bg-primary px-5 text-sm font-semibold text-white transition hover:bg-primary-600 active:scale-[0.98] disabled:cursor-not-allowed disabled:bg-surface-2 disabled:text-text-tertiary"
+          >
+            <span className="flex items-center gap-2">
+              {loading && <Loader2 className="h-4 w-4 animate-spin" />}
+              {nextLabel}
+            </span>
+            <ArrowRight className="h-5 w-5" />
+          </button>
+        </div>
+      </div>
+    </footer>
+  )
+}
+
+export function SelectionSummary({ count, totalLabel }: { count: number; totalLabel: string }) {
+  if (count === 0) {
+    return <p className="text-xs text-text-tertiary">Nenhum serviço selecionado</p>
+  }
+  return (
+    <>
+      <p className="text-xs text-text-secondary">
+        {count} {count === 1 ? 'serviço selecionado' : 'serviços selecionados'}
+      </p>
+      <p className="text-base font-bold text-text">Total previsto: {totalLabel}</p>
+    </>
   )
 }

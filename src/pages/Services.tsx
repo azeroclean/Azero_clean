@@ -1,97 +1,106 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useMemo, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { X, Search, ArrowRight, Clock, Check, Sparkles } from 'lucide-react'
+import { X, Search, Clock, Check, ShoppingCart, SearchX } from 'lucide-react'
 import { useServices } from '../hooks/useServices'
 import { useBooking } from '../context/booking-context'
-import { FlowHeader } from '../components/FlowHeader'
-import { getServicePrice, getServicePriceLabel } from '../data/services'
-import { VEHICLE_LABELS } from '../data/vehicles'
+import { FlowFooter, FlowHeader, SelectionSummary } from '../components/FlowHeader'
+import { ServiceImage } from '../components/ServiceImage'
+import { getServicePriceLabel, getTotalLabel } from '../data/services'
+import { VEHICLE_TYPES } from '../data/vehicles'
+
+const normalize = (value: string) =>
+  value.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().trim()
 
 export function Services() {
   const navigate = useNavigate()
   const { services, loading } = useServices()
-  const { vehicleType, selectedIds, toggleService } = useBooking()
+  const { vehicleType, setVehicleType, selectedIds, toggleService } = useBooking()
   const [query, setQuery] = useState('')
 
-  useEffect(() => {
-    if (!vehicleType) navigate('/veiculo', { replace: true })
-  }, [vehicleType, navigate])
+  const filtered = useMemo(() => {
+    const q = normalize(query)
+    if (!q) return services
+    return services.filter((service) =>
+      normalize(`${service.title} ${service.category} ${service.description}`).includes(q)
+    )
+  }, [services, query])
 
-  const filtered = useMemo(
-    () =>
-      services.filter((service) =>
-        service.title.toLowerCase().includes(query.trim().toLowerCase())
-      ),
-    [services, query]
-  )
-
+  // só conta serviços que ainda existem no catálogo
   const selectedServices = useMemo(
     () => services.filter((service) => selectedIds.includes(service.id)),
     [services, selectedIds]
   )
-
-  const total = selectedServices.reduce(
-    (acc, service) => acc + getServicePrice(service, vehicleType),
-    0
-  )
-  const count = selectedIds.length
+  const { label: totalLabel } = getTotalLabel(selectedServices, vehicleType)
+  const count = selectedServices.length
 
   return (
     <div className="min-h-screen bg-bg text-text">
-      <FlowHeader step={2} title="Escolha os serviços" />
+      <FlowHeader
+        step={1}
+        title="Catálogo de serviços"
+        subtitle="Selecione os serviços que deseja agendar"
+      />
 
-      <main className="mx-auto flex max-w-md flex-col gap-4 px-4 pb-40">
-        <div className="mt-4 flex flex-col gap-1.5">
-          <div className="flex items-center gap-2 text-xs text-text-tertiary">
-            <span className="rounded-full border border-primary/40 bg-primary/10 px-2.5 py-0.5 text-[10px] uppercase tracking-[0.2em] text-primary">
-              {vehicleType ? VEHICLE_LABELS[vehicleType] : ''}
-            </span>
-            <button
-              type="button"
-              onClick={() => navigate('/veiculo')}
-              className="font-medium text-primary"
-            >
-              trocar
-            </button>
+      <main className="mx-auto flex max-w-md flex-col gap-5 px-4 pb-48 pt-4">
+        <section className="flex flex-col gap-2">
+          <span className="text-xs font-medium text-text-secondary">Tipo de veículo</span>
+          <div className="grid grid-cols-3 gap-2" role="radiogroup" aria-label="Tipo de veículo">
+            {VEHICLE_TYPES.map((option) => {
+              const active = vehicleType === option.value
+              const Icon = option.icon
+              return (
+                <button
+                  key={option.value}
+                  type="button"
+                  role="radio"
+                  aria-checked={active}
+                  onClick={() => setVehicleType(option.value)}
+                  className={`flex flex-col items-center gap-1 rounded-2xl border-2 px-2 py-3 text-xs font-semibold transition ${
+                    active
+                      ? 'border-primary bg-primary/10 text-text'
+                      : 'border-transparent bg-surface text-text-secondary shadow-sm hover:border-border'
+                  }`}
+                >
+                  <Icon className={`h-5 w-5 ${active ? 'text-primary-600' : ''}`} />
+                  {option.label}
+                </button>
+              )
+            })}
           </div>
-          <h1 className="text-base font-semibold">Quais serviços você deseja?</h1>
-          <p className="text-sm text-text-secondary">
-            Selecione um ou mais serviços para agendar.
-          </p>
-        </div>
+        </section>
 
-        <div className="relative">
-          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-text-tertiary" />
-          <input
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder="Buscar serviço"
-            className="w-full rounded-full border border-border bg-surface-2 px-9 py-2.5 text-sm text-text placeholder:text-text-tertiary focus:border-primary/70 focus:outline-none focus:ring-2 focus:ring-primary/20"
-          />
-          {query && (
-            <button
-              type="button"
-              onClick={() => setQuery('')}
-              className="absolute right-3 top-1/2 -translate-y-1/2 text-text-tertiary transition hover:text-text"
-              aria-label="Limpar busca"
-            >
-              <X className="h-4 w-4" />
-            </button>
-          )}
-        </div>
+        <label className="flex flex-col gap-2">
+          <span className="text-xs font-medium text-text-secondary">Pesquisar serviço</span>
+          <span className="relative">
+            <Search className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-lilac" />
+            <input
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Informe o nome do serviço"
+              className="w-full rounded-2xl border-2 border-transparent bg-surface-2 py-3 pl-11 pr-10 text-sm text-text placeholder:text-lilac/80 focus:border-primary/60 focus:bg-surface focus:outline-none"
+            />
+            {query && (
+              <button
+                type="button"
+                onClick={() => setQuery('')}
+                className="absolute right-3 top-1/2 -translate-y-1/2 rounded-full p-1 text-text-tertiary transition hover:text-text"
+                aria-label="Limpar busca"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            )}
+          </span>
+        </label>
 
         {loading ? (
           <div className="grid grid-cols-2 gap-3">
             {Array.from({ length: 4 }).map((_, index) => (
-              <div
-                key={index}
-                className="h-56 animate-pulse rounded-3xl border border-border bg-surface"
-              />
+              <div key={index} className="h-72 animate-pulse rounded-2xl bg-surface" />
             ))}
           </div>
         ) : filtered.length === 0 ? (
-          <div className="flex flex-col items-center gap-2 rounded-3xl border border-border bg-surface p-8 text-center">
-            <Sparkles className="h-5 w-5 text-text-tertiary" />
+          <div className="flex flex-col items-center gap-2 rounded-2xl bg-surface p-8 text-center shadow-sm">
+            <SearchX className="h-6 w-6 text-text-tertiary" />
             <p className="text-sm text-text-secondary">
               Nenhum serviço encontrado para “{query}”.
             </p>
@@ -103,64 +112,61 @@ export function Services() {
               return (
                 <article
                   key={service.id}
-                  className={`group flex flex-col overflow-hidden rounded-3xl border bg-surface transition ${
-                    isSelected
-                      ? 'border-primary/80 shadow-[0_0_70px_-30px_rgba(0,210,255,0.9)]'
-                      : 'border-border hover:border-primary/40'
+                  className={`animate-fade-up flex flex-col overflow-hidden rounded-2xl border-2 bg-surface shadow-sm transition ${
+                    isSelected ? 'border-primary' : 'border-transparent'
                   }`}
                 >
                   <div className="relative">
-                    <img
-                      src={service.image}
-                      alt={service.title}
-                      loading="lazy"
-                      className="h-28 w-full object-cover"
-                    />
-                    <span className="absolute left-2 top-2 rounded-full border border-primary/40 bg-bg/80 px-2 py-0.5 text-[9px] uppercase tracking-[0.2em] text-primary backdrop-blur">
-                      {service.category}
-                    </span>
+                    <ServiceImage service={service} className="h-28" />
                     {isSelected && (
-                      <span className="absolute right-2 top-2 flex h-6 w-6 items-center justify-center rounded-full bg-primary text-black">
-                        <Check className="h-3.5 w-3.5" />
+                      <span className="absolute right-2 top-2 flex h-7 w-7 items-center justify-center rounded-full bg-primary text-white shadow">
+                        <Check className="h-4 w-4" strokeWidth={3} />
                       </span>
                     )}
                   </div>
 
                   <div className="flex flex-1 flex-col gap-2 p-3">
-                    <h3 className="text-sm font-semibold leading-snug">
-                      {service.title}
-                    </h3>
-                    <p className="text-xs text-text-secondary line-clamp-2">
-                      {service.description}
+                    <h3 className="text-sm font-semibold leading-snug">{service.title}</h3>
+                    {service.duration && (
+                      <span className="flex items-center gap-1.5 text-[11px] text-text-tertiary">
+                        <Clock className="h-3 w-3" />
+                        {service.duration} de duração
+                      </span>
+                    )}
+                    <p className="text-xs leading-relaxed text-text-secondary">
+                      <span className="line-clamp-3">{service.description}</span>
+                      <Link
+                        to={`/servico/${service.id}`}
+                        className="font-bold text-text hover:underline"
+                      >
+                        ver mais
+                      </Link>
                     </p>
 
-                    <div className="flex items-center gap-2 text-[11px] text-text-tertiary">
-                      <Clock className="h-3 w-3" />
-                      {service.duration}
-                    </div>
-
-                    <Link
-                      to={`/servico/${service.id}`}
-                      className="text-[11px] font-medium text-primary"
-                    >
-                      ver mais
-                    </Link>
-
-                    <div className="mt-auto flex items-center justify-between">
-                      <span className="text-sm font-semibold text-primary">
-                        {getServicePriceLabel(service, vehicleType)}
-                      </span>
-                    </div>
+                    <span className="mt-auto pt-1 text-sm font-bold text-text">
+                      {getServicePriceLabel(service, vehicleType)}
+                    </span>
                     <button
                       type="button"
                       onClick={() => toggleService(service.id)}
-                      className={`mt-1 rounded-full px-3 py-1.5 text-xs font-semibold transition ${
+                      aria-pressed={isSelected}
+                      className={`flex items-center justify-center gap-1.5 rounded-full px-3 py-2.5 text-xs font-semibold transition active:scale-95 ${
                         isSelected
-                          ? 'bg-primary text-black'
-                          : 'border border-primary/60 text-primary hover:bg-primary/10'
+                          ? 'bg-primary text-white hover:bg-primary-600'
+                          : 'bg-ink text-white hover:bg-ink-2'
                       }`}
                     >
-                      {isSelected ? 'Selecionado' : 'Selecionar'}
+                      {isSelected ? (
+                        <>
+                          <Check className="h-4 w-4" strokeWidth={3} />
+                          Selecionado
+                        </>
+                      ) : (
+                        <>
+                          <ShoppingCart className="h-4 w-4" />
+                          Selecionar
+                        </>
+                      )}
                     </button>
                   </div>
                 </article>
@@ -170,35 +176,12 @@ export function Services() {
         )}
       </main>
 
-      <footer className="fixed inset-x-0 bottom-0 z-20 border-t border-border bg-bg/95 backdrop-blur">
-        <div className="mx-auto flex max-w-md flex-col gap-2 px-4 py-3">
-          <div className="flex items-center justify-between text-xs text-text-secondary">
-            <span>
-              {count === 0
-                ? 'Nenhum serviço selecionado'
-                : `${count} ${count === 1 ? 'serviço' : 'serviços'} selecionado${count === 1 ? '' : 's'}`}
-            </span>
-            <span>
-              Total:{' '}
-              <span className="font-semibold text-primary">
-                {total.toLocaleString('pt-BR', {
-                  style: 'currency',
-                  currency: 'BRL',
-                })}
-              </span>
-            </span>
-          </div>
-          <button
-            type="button"
-            disabled={count === 0}
-            onClick={() => navigate('/agendar')}
-            className="flex w-full items-center justify-center gap-2 rounded-2xl bg-primary px-5 py-3 text-sm font-semibold text-black transition hover:bg-primary-600 disabled:cursor-not-allowed disabled:opacity-40"
-          >
-            Continuar
-            <ArrowRight className="h-4 w-4" />
-          </button>
-        </div>
-      </footer>
+      <FlowFooter
+        summary={<SelectionSummary count={count} totalLabel={totalLabel} />}
+        onBack={() => navigate('/')}
+        onNext={() => navigate('/agendar')}
+        disabled={count === 0 || !vehicleType}
+      />
     </div>
   )
 }

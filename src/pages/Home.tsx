@@ -1,233 +1,215 @@
-﻿import { Link } from 'react-router-dom'
+﻿import { useRef } from 'react'
+import { Link, useNavigate } from 'react-router-dom'
 import {
   Phone,
   MessageCircle,
   Camera,
   MapPin,
-  Clock,
+  ArrowLeft,
   ArrowRight,
-  Sparkles,
-  ShieldCheck,
-  Droplets,
+  CalendarDays,
+  Clock,
 } from 'lucide-react'
 import { useServices } from '../hooks/useServices'
+import { useBooking } from '../context/booking-context'
+import { getServicePriceLabel } from '../data/services'
+import { BUSINESS, getOpenStatus, whatsappLink } from '../data/business'
+import { ServiceImage } from '../components/ServiceImage'
 
 const CURRENT_YEAR = new Date().getFullYear()
 
-const features = [
-  {
-    icon: Droplets,
-    title: 'Lavagem Completa',
-    description: 'Ducha alta pressão, detalhamento de chassi e rodas.',
-  },
-  {
-    icon: Sparkles,
-    title: 'Higienização Interna',
-    description: 'Extração a seco de estofados e dutos de A/C.',
-  },
-  {
-    icon: ShieldCheck,
-    title: 'Proteção de Pintura',
-    description: 'Selante cerâmico para máximo brilho e proteção.',
-  },
-]
-
 export function Home() {
+  const navigate = useNavigate()
   const { services, loading } = useServices()
-  const whatsappLink = 'https://wa.me/5588994987680'
-  const instagramLink = 'https://instagram.com/azeroclean'
-  const telLink = 'tel:88994987680'
+  const { vehicleType, isSelected, toggleService } = useBooking()
+  const carouselRef = useRef<HTMLDivElement>(null)
+  const status = getOpenStatus()
+
+  const scrollCarousel = (direction: 1 | -1) => {
+    const el = carouselRef.current
+    if (!el) return
+    el.scrollBy({ left: direction * el.clientWidth * 0.8, behavior: 'smooth' })
+  }
+
+  const scheduleService = (id: string) => {
+    if (!isSelected(id)) toggleService(id)
+    navigate('/servicos')
+  }
+
+  const contactButtons = [
+    { href: `tel:${BUSINESS.phone}`, label: 'Ligar', icon: Phone },
+    { href: whatsappLink(), label: 'WhatsApp', icon: MessageCircle, external: true },
+    { href: BUSINESS.instagram, label: 'Instagram', icon: Camera, external: true },
+  ]
 
   return (
-    <div className="min-h-screen bg-bg text-text">
-      <header className="sticky top-0 z-10 border-b border-border bg-bg/95 backdrop-blur">
-        <div className="mx-auto flex max-w-md items-center justify-between px-4 py-3">
-          <div className="flex items-center gap-2">
-            <div className="flex h-9 w-9 items-center justify-center rounded-full border border-primary/60 bg-primary/10">
-              <span className="text-sm font-bold text-primary">AC</span>
+    <div className="min-h-screen bg-surface text-text">
+      <section className="relative overflow-hidden bg-ink text-white">
+        <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_80%_10%,rgba(61,214,140,0.18),transparent_55%)]" />
+        <div className="relative mx-auto flex max-w-md flex-col gap-6 px-5 pb-10 pt-12">
+          <div className="flex items-center gap-4">
+            <div className="flex h-24 w-24 shrink-0 items-center justify-center rounded-full bg-white shadow-lg">
+              <span className="text-2xl font-black tracking-tight text-ink">AC</span>
             </div>
-            <span className="text-sm font-semibold uppercase tracking-[0.3em] text-text-secondary">
-              Azero Clean
-            </span>
+            <div className="flex min-w-0 flex-col gap-2">
+              <h1 className="text-xl font-bold">{BUSINESS.name}</h1>
+              <span className="flex items-center gap-1.5 text-sm text-white/80">
+                <MapPin className="h-4 w-4 shrink-0" />
+                {BUSINESS.tagline}
+              </span>
+              <span
+                className={`w-fit rounded-full px-3 py-1 text-xs font-semibold ${
+                  status.open ? 'bg-primary text-white' : 'bg-white/15 text-white/80'
+                }`}
+              >
+                {status.label}
+              </span>
+            </div>
           </div>
-          <span className="flex items-center gap-1.5 rounded-full border border-accent/40 bg-accent/10 px-2.5 py-1 text-[11px] font-medium text-accent">
-            <span className="h-1.5 w-1.5 rounded-full bg-accent" />
-            Aberto agora
-          </span>
-        </div>
-      </header>
 
-      <main className="mx-auto flex max-w-md flex-col gap-8 px-4 pb-10">
-        <section className="mt-6 flex flex-col gap-5 rounded-3xl border border-border bg-surface/80 p-5 shadow-[0_0_80px_-40px_rgba(0,210,255,0.8)]">
-          <div className="flex items-start justify-between gap-4">
-            <div className="flex items-center gap-3">
-              <div className="flex h-16 w-16 items-center justify-center rounded-full border border-primary/70 bg-gradient-to-br from-primary/30 via-primary/10 to-transparent">
-                <span className="text-lg font-bold text-primary">AC</span>
-              </div>
-              <div className="flex flex-col">
-                <h1 className="text-lg font-semibold">Azero Clean</h1>
-                <div className="mt-1 flex items-center gap-1.5 text-sm text-text-secondary">
-                  <MapPin className="h-4 w-4" />
-                  <span>Seu Carro Sempre com Outro Nível</span>
-                </div>
-                <div className="mt-1 flex items-center gap-1.5 text-xs text-text-tertiary">
-                  <Clock className="h-3.5 w-3.5" />
-                  <span>Atendimento conforme agendamento</span>
-                </div>
-              </div>
-            </div>
-            <div className="flex flex-col gap-2">
+          <div className="flex gap-3">
+            {contactButtons.map(({ href, label, icon: Icon, external }) => (
               <a
-                href={telLink}
-                className="flex h-9 w-9 items-center justify-center rounded-full border border-border bg-surface-2 transition hover:border-primary/60 hover:text-primary"
-                aria-label="Ligar"
+                key={label}
+                href={href}
+                aria-label={label}
+                {...(external ? { target: '_blank', rel: 'noreferrer' } : {})}
+                className="flex h-14 w-14 items-center justify-center rounded-xl bg-white/15 text-white backdrop-blur transition hover:bg-white/25"
               >
-                <Phone className="h-4 w-4" />
+                <Icon className="h-6 w-6" />
               </a>
-              <a
-                href={whatsappLink}
-                target="_blank"
-                rel="noreferrer"
-                className="flex h-9 w-9 items-center justify-center rounded-full border border-border bg-surface-2 transition hover:border-primary/60 hover:text-primary"
-                aria-label="WhatsApp"
-              >
-                <MessageCircle className="h-4 w-4" />
-              </a>
-              <a
-                href={instagramLink}
-                target="_blank"
-                rel="noreferrer"
-                className="flex h-9 w-9 items-center justify-center rounded-full border border-border bg-surface-2 transition hover:border-primary/60 hover:text-primary"
-                aria-label="Instagram"
-              >
-                <Camera className="h-4 w-4" />
-              </a>
-            </div>
+            ))}
           </div>
 
           <Link
-            to="/veiculo"
-            className="group flex w-full items-center justify-center gap-2 rounded-2xl bg-primary px-5 py-3 text-sm font-semibold text-black transition hover:bg-primary-600 active:scale-[0.98]"
+            to="/servicos"
+            className="flex h-14 w-full items-center justify-center gap-3 rounded-full bg-primary text-sm font-bold uppercase tracking-wide text-white shadow-[0_12px_30px_-12px_rgba(61,214,140,0.9)] transition hover:bg-primary-600 active:scale-[0.98]"
           >
-            AGENDAR HORÁRIO
-            <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
+            Agendar horário
+            <CalendarDays className="h-5 w-5" />
           </Link>
-        </section>
+        </div>
+      </section>
 
-        <section className="flex flex-col gap-4">
-          <div className="flex items-center justify-between">
-            <h2 className="text-base font-semibold">Conheça nossos serviços</h2>
-            <Link to="/servicos" className="text-xs font-medium text-primary">
-              Ver todos
-            </Link>
+      <main className="mx-auto flex max-w-md flex-col">
+        <section className="flex flex-col gap-4 py-8">
+          <div className="flex items-end justify-between gap-3 px-5">
+            <div>
+              <h2 className="text-lg font-medium">Conheça nossos serviços</h2>
+              <p className="text-sm text-lilac">Reserve seu horário agora!</p>
+            </div>
+            <div className="flex gap-2">
+              {([-1, 1] as const).map((dir) => (
+                <button
+                  key={dir}
+                  type="button"
+                  onClick={() => scrollCarousel(dir)}
+                  className="flex h-11 w-11 items-center justify-center rounded-xl bg-surface-2 text-lilac transition hover:bg-border"
+                  aria-label={dir === -1 ? 'Serviços anteriores' : 'Próximos serviços'}
+                >
+                  {dir === -1 ? <ArrowLeft className="h-5 w-5" /> : <ArrowRight className="h-5 w-5" />}
+                </button>
+              ))}
+            </div>
           </div>
-          <div className="flex gap-3 overflow-x-auto pb-2 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+
+          <div
+            ref={carouselRef}
+            className="no-scrollbar flex snap-x snap-mandatory gap-4 overflow-x-auto scroll-smooth scroll-px-5 px-5 pb-4"
+          >
             {loading &&
-              Array.from({ length: 3 }).map((_, index) => (
+              Array.from({ length: 2 }).map((_, index) => (
                 <div
                   key={`skeleton-${index}`}
-                  className="h-72 min-w-[78%] animate-pulse rounded-3xl border border-border bg-surface"
+                  className="h-96 w-[78%] shrink-0 animate-pulse rounded-2xl bg-surface-2"
                 />
               ))}
             {services.map((service) => (
               <article
                 key={service.id}
-                className="flex min-w-[78%] flex-col overflow-hidden rounded-3xl border border-border bg-surface shadow-[0_40px_80px_-60px_rgba(0,210,255,0.9)]"
+                className="flex w-[78%] shrink-0 snap-start flex-col overflow-hidden rounded-2xl border border-border bg-surface shadow-[0_10px_30px_-18px_rgba(21,23,34,0.35)]"
               >
-                <img
-                  src={service.image}
-                  alt={service.title}
-                  className="h-40 w-full object-cover"
-                />
-                <div className="flex flex-1 flex-col gap-3 p-4">
-                  <div className="flex items-center justify-between">
-                    <span className="rounded-full border border-primary/40 bg-primary/10 px-2 py-0.5 text-[10px] uppercase tracking-[0.25em] text-primary">
-                      {service.category}
+                <ServiceImage service={service} className="h-48" />
+                <div className="flex flex-1 flex-col gap-2 p-4">
+                  <h3 className="text-base font-semibold">{service.title}</h3>
+                  {service.duration && (
+                    <span className="flex items-center gap-1.5 text-xs text-text-tertiary">
+                      <Clock className="h-3.5 w-3.5" />
+                      {service.duration} de duração
                     </span>
-                    <span className="text-xs text-text-tertiary">{service.duration}</span>
-                  </div>
-                  <div className="flex flex-col gap-1.5">
-                    <h3 className="text-base font-semibold">{service.title}</h3>
-                    <p className="text-sm text-text-secondary line-clamp-2">
-                      {service.description}
-                    </p>
-                    <Link
-                      to={`/servico/${service.id}`}
-                      className="text-xs font-medium text-primary"
-                    >
+                  )}
+                  <p className="text-sm text-text-secondary">
+                    <span className="line-clamp-2">{service.description}</span>
+                    <Link to={`/servico/${service.id}`} className="font-bold text-text hover:underline">
                       ver mais
                     </Link>
-                  </div>
-                  <div className="mt-auto flex items-center justify-between">
-                    <span className="text-base font-semibold text-primary">
-                      {service.priceLabel || `R$ ${service.price.toFixed(2)}`}
-                    </span>
-                    <Link
-                      to={`/servico/${service.id}`}
-                      className="rounded-full border border-primary/60 px-4 py-1.5 text-xs font-semibold text-primary transition hover:bg-primary/10"
-                    >
-                      Agendar horário
-                    </Link>
-                  </div>
+                  </p>
+                  <span className="mt-auto pt-2 text-sm font-bold">
+                    {getServicePriceLabel(service, vehicleType)}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => scheduleService(service.id)}
+                    className="flex h-11 items-center justify-center gap-2 rounded-full bg-ink text-sm font-semibold text-white transition hover:bg-ink-2 active:scale-[0.98]"
+                  >
+                    <CalendarDays className="h-4 w-4" />
+                    Agendar horário
+                  </button>
                 </div>
               </article>
             ))}
           </div>
         </section>
 
-        <section className="flex flex-col gap-4">
-          <h2 className="text-base font-semibold">Por que escolher a Azero Clean?</h2>
-          <div className="grid grid-cols-1 gap-3">
-            {features.map((feature) => (
-              <div
-                key={feature.title}
-                className="flex items-start gap-3 rounded-2xl border border-border bg-surface p-4"
-              >
-                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-primary/40 bg-primary/10">
-                  <feature.icon className="h-5 w-5 text-primary" />
-                </div>
-                <div className="flex flex-col gap-1">
-                  <h3 className="text-sm font-semibold">{feature.title}</h3>
-                  <p className="text-xs text-text-secondary">{feature.description}</p>
-                </div>
-              </div>
-            ))}
+        <section className="flex flex-col gap-3 border-t border-border px-5 py-8">
+          <h2 className="text-lg font-medium">Onde estamos?</h2>
+          <p className="text-sm text-lilac">{BUSINESS.address}</p>
+          <div className="h-56 overflow-hidden rounded-2xl border border-border bg-surface-2">
+            <iframe
+              title={`Localização ${BUSINESS.name}`}
+              src={BUSINESS.mapsEmbed}
+              width="100%"
+              height="100%"
+              style={{ border: 0 }}
+              loading="lazy"
+              referrerPolicy="no-referrer-when-downgrade"
+            />
           </div>
         </section>
 
-        <section className="flex flex-col gap-4">
-          <h2 className="text-base font-semibold">Onde estamos?</h2>
-          <div className="overflow-hidden rounded-3xl border border-border bg-surface">
-            <div className="flex flex-col gap-3 p-4">
-              <div className="flex items-start gap-2 text-sm text-text-secondary">
-                <MapPin className="mt-0.5 h-4 w-4 text-primary" />
-                <p>
-                  R. Exemplo, 123 - Centro
-                  <br />
-                  Cidade - UF, CEP 00000-000
-                </p>
+        <section className="border-t border-border px-5 py-8">
+          <div className="overflow-hidden rounded-2xl border border-primary/40">
+            <div className="flex h-24 items-center justify-center bg-ink">
+              <span className="text-2xl font-black uppercase tracking-[0.2em] text-white">
+                {BUSINESS.name}
+              </span>
+            </div>
+            <div className="relative flex flex-col items-center gap-3 bg-gradient-to-b from-surface to-surface-2 px-6 pb-6 pt-12 text-center">
+              <div className="absolute -top-10 flex h-20 w-20 items-center justify-center rounded-full bg-white shadow-md">
+                <span className="text-xl font-black text-ink">AC</span>
               </div>
-              <div className="relative h-56 w-full overflow-hidden rounded-2xl border border-border">
-                <iframe
-                  title="Localização Azero Clean"
-                  src="https://www.google.com/maps/embed?pb=!1m18!1m12!1m3!1d3974.123456789!2d-39.123456!3d-6.123456!2m3!1f0!2f0!3f0!3m2!1i1024!2i768!4f13.1!3m3!1m2!1s0x7a0b123456789abc%3A0x123456789abcdef0!2sAzero%20Clean!5e0!3m2!1spt-BR!2sbr!4v1234567890123"
-                  width="100%"
-                  height="100%"
-                  style={{ border: 0 }}
-                  loading="lazy"
-                  referrerPolicy="no-referrer-when-downgrade"
-                />
-              </div>
+              <h3 className="text-base font-bold">Entre em contato agora mesmo</h3>
+              <p className="text-sm text-text-secondary">
+                Nós da {BUSINESS.name} estamos prontos para te atender
+              </p>
+              <a
+                href={whatsappLink()}
+                target="_blank"
+                rel="noreferrer"
+                className="mt-2 flex h-12 items-center gap-2 rounded-full bg-primary px-6 text-sm font-semibold text-white transition hover:bg-primary-600"
+              >
+                <MessageCircle className="h-5 w-5" />
+                Chamar no WhatsApp
+              </a>
             </div>
           </div>
         </section>
       </main>
 
-      <footer className="border-t border-border bg-bg/95">
-        <div className="mx-auto flex max-w-md flex-col items-center gap-1 px-4 py-5 text-xs text-text-tertiary">
-          <span className="uppercase tracking-[0.4em] text-text-secondary">Azero Clean</span>
-          <span>© {CURRENT_YEAR} Azero Clean. Todos os direitos reservados.</span>
-          <span className="text-text-tertiary">Cuidando do seu carro.</span>
+      <footer className="border-t border-border">
+        <div className="mx-auto flex max-w-md flex-col items-center gap-1 px-4 py-6 text-xs text-text-secondary">
+          <span className="font-bold uppercase tracking-[0.3em] text-text">{BUSINESS.name}</span>
+          <span>© {CURRENT_YEAR} · Todos os direitos reservados</span>
         </div>
       </footer>
     </div>

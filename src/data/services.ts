@@ -31,7 +31,15 @@ export function getServicePriceLabel(
   service: Service,
   vehicleType: VehicleType | null
 ): string {
-  return formatPrice(getServicePrice(service, vehicleType))
+  const price = getServicePrice(service, vehicleType)
+  return price > 0 ? formatPrice(price) : 'Valor a combinar'
+}
+
+export function getTotalLabel(selected: Service[], vehicleType: VehicleType | null) {
+  const total = selected.reduce((acc, s) => acc + getServicePrice(s, vehicleType), 0)
+  const hasOpenPrice = selected.some((s) => getServicePrice(s, vehicleType) <= 0)
+  if (total <= 0) return { total, label: 'A combinar' }
+  return { total, label: hasOpenPrice ? `${formatPrice(total)} + a combinar` : formatPrice(total) }
 }
 
 export const services: Service[] = [
