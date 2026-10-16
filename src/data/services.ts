@@ -5,6 +5,7 @@ export interface Service {
   title: string
   description: string
   duration: string
+  durationMinutes?: number
   price: number
   priceLabel?: string
   category: string
@@ -12,6 +13,16 @@ export interface Service {
   benefits: string[]
   prices?: Partial<Record<VehicleType, number>>
 }
+
+export const formatDuration = (minutes: number) => {
+  const h = Math.floor(minutes / 60)
+  const m = minutes % 60
+  if (!h) return `${m} min`
+  return m ? `${h}h${String(m).padStart(2, '0')}` : `${h}h`
+}
+
+export const totalDuration = (selected: Service[]) =>
+  selected.reduce((acc, s) => acc + (s.durationMinutes ?? 0), 0)
 
 export const formatPrice = (value: number) =>
   value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
@@ -49,6 +60,7 @@ export const services: Service[] = [
     description:
       'Ducha alta pressão, detalhamento de chassi, rodas, limpeza externa completa e acabamento.',
     duration: '50 min',
+    durationMinutes: 50,
     price: 60.0,
     priceLabel: 'R$ 60,00',
     category: 'Lavagem',
@@ -66,6 +78,7 @@ export const services: Service[] = [
     description:
       'Extração a seco de estofados, dutos de A/C, painel, porta-malas e neutralização de odores.',
     duration: '2h',
+    durationMinutes: 120,
     price: 150.0,
     priceLabel: 'R$ 150,00',
     category: 'Higienização',
@@ -83,6 +96,7 @@ export const services: Service[] = [
     description:
       'Descontaminação da pintura, aplicação de selante cerâmico para máximo brilho, repelência e proteção.',
     duration: '3h30',
+    durationMinutes: 210,
     price: 280.0,
     priceLabel: 'R$ 280,00',
     category: 'Proteção',

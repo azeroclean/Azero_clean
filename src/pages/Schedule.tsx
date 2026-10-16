@@ -6,33 +6,66 @@ import { ptBR } from 'date-fns/locale'
 import { useServices } from '../hooks/useServices'
 import { useBooking } from '../context/booking-context'
 import { FlowFooter, FlowHeader, SelectionSummary } from '../components/FlowHeader'
-import { fetchBookedSlots } from '../lib/services'
-import { getTotalLabel } from '../data/services'
-import { BUSINESS, isOpenDay } from '../data/business'
+import { fetchBookings, fetchTimeSlots } from '../lib/services'
+import type { Booking } from '../lib/services'
+import { formatDuration, getTotalLabel, totalDuration } from '../data/services'
+import type { Service } from '../data/services'
+import { BUSINESS } from '../data/business'
 
-const TIME_SLOTS = ['08:30', '09:30', '11:00', '14:00', '15:30', '16:30']
+// Horários padrão, usados enquanto o admin não cadastrou os seus no Supabase.
+const DEFAULT_TIMES = ['08:30', '09:30', '11:00', '14:00', '15:30', '16:30']
+const DEFAULT_SLOTS: Record<number, string[]> = Object.fromEntries(
+  Object.entries(BUSINESS.hours).map(([day, hours]) => [
+    day,
+    hours ? DEFAULT_TIMES.filter((t) => t >= hours[0] && t < hours[1]) : [],
+  ])
+)
 const DAYS_AHEAD = 30
 
-function slotStatus(isoDate: string, slot: string, booked: string[]) {
-  const day = new Date(`${isoDate}T00:00:00`)
-  const hours = BUSINESS.hours[day.getDay()]
-  if (!hours || slot < hours[0] || slot >= hours[1]) return 'closed'
-  if (booked.includes(slot)) return 'booked'
+const toMinutes = (value: string) => {
+  const [h, m] = value.split(':').map(Number)
+  return h * 60 + m
+}
 
+type SlotStatus = 'free' | 'booked' | 'past'
+
+// Um horário fica ocupado se o serviço escolhido (com sua duração) se sobrepõe
+// a algum agendamento já feito no dia. Sem duração cadastrada, bloqueia só o próprio horário.
+function slotStatus(
+  isoDate: string,
+  slot: string,
+  ranges: [number, number][],
+  duration: number
+): SlotStatus {
   const [h, m] = slot.split(':').map(Number)
-  const slotDate = new Date(day)
+  const slotDate = new Date(`${isoDate}T00:00:00`)
   slotDate.setHours(h, m, 0, 0)
   if (slotDate.getTime() <= Date.now()) return 'past'
 
+  const start = toMinutes(slot)
+  const end = start + Math.max(duration, 1)
+  if (ranges.some(([bStart, bEnd]) => start < bEnd && bStart < end)) return 'booked'
+
   return 'free'
+}
+
+function bookingRanges(bookings: Booking[], services: Service[]): [number, number][] {
+  return bookings.map((booking) => {
+    const start = toMinutes(booking.time)
+    const minutes = totalDuration(services.filter((s) => booking.service_ids.includes(s.id)))
+    return [start, start + Math.max(minutes, 1)]
+  })
 }
 
 export function Schedule() {
   const navigate = useNavigate()
   const { services, loading } = useServices()
   const { vehicleType, selectedIds, date, time, setDate, setTime } = useBooking()
-  const [slotResult, setSlotResult] = useState<{ date: string; times: string[] } | null>(
+  const [slotResult, setSlotResult] = useState<{ date: string; bookings: Booking[] } | null>(
     null
+  )
+  const [slotConfig, setSlotConfig] = useState<Record<number, string[]> | null | undefined>(
+    undefined
   )
   const timesRef = useRef<HTMLElement>(null)
 
@@ -49,10 +82,20 @@ export function Schedule() {
   }, [loading, selectedServices.length, navigate])
 
   useEffect(() => {
+    let active = true
+    fetchTimeSlots().then((config) => {
+      if (active) setSlotConfig(config)
+    })
+    return () => {
+      active = false
+    }
+  }, [])
+
+  useEffect(() => {
     if (!date) return
     let active = true
-    fetchBookedSlots(date).then((times) => {
-      if (active) setSlotResult({ date, times })
+    fetchBookings(date).then((bookings) => {
+      if (active) setSlotResult({ date, bookings })
     })
     return () => {
       active = false
@@ -64,20 +107,18 @@ export function Schedule() {
     return Array.from({ length: DAYS_AHEAD }, (_, i) => addDays(today, i))
   }, [])
 
-  const loadingSlots = Boolean(date) && slotResult?.date !== date
-  const bookedSlots = useMemo(
-    () => (date && slotResult?.date === date ? slotResult.times : []),
-    [date, slotResult]
-  )
+  const slotsByDay = slotConfig ?? DEFAULT_SLOTS
+  const timesForDay = (day: Date) => slotsByDay[day.getDay()] ?? []
 
-  const slots = useMemo(
-    () =>
-      date && !loadingSlots
-        ? TIME_SLOTS.map((slot) => ({ slot, status: slotStatus(date, slot, bookedSlots) }))
-            .filter((s) => s.status !== 'closed')
-        : [],
-    [date, loadingSlots, bookedSlots]
-  )
+  const loadingSlots = Boolean(date) && (slotResult?.date !== date || slotConfig === undefined)
+  const duration = totalDuration(selectedServices)
+
+  const slots = useMemo(() => {
+    if (!date || loadingSlots || !slotResult) return []
+    const ranges = bookingRanges(slotResult.bookings, services)
+    const times = slotsByDay[new Date(`${date}T00:00:00`).getDay()] ?? []
+    return times.map((slot) => ({ slot, status: slotStatus(date, slot, ranges, duration) }))
+  }, [date, loadingSlots, slotResult, services, slotsByDay, duration])
   const freeCount = slots.filter((s) => s.status === 'free').length
 
   // se o horário salvo não estiver mais disponível, limpa a seleção
@@ -120,7 +161,7 @@ export function Schedule() {
           <div className="no-scrollbar -mx-4 flex snap-x gap-2 overflow-x-auto px-4 pb-1">
             {days.map((day) => {
               const iso = format(day, 'yyyy-MM-dd')
-              const closed = !isOpenDay(day)
+              const closed = slotConfig !== undefined && timesForDay(day).length === 0
               const active = iso === date
               return (
                 <button
@@ -216,6 +257,11 @@ export function Schedule() {
               {freeCount < slots.length && (
                 <p className="text-[11px] text-text-tertiary">
                   Horários riscados já estão reservados ou passaram.
+                </p>
+              )}
+              {duration > 0 && (
+                <p className="text-[11px] text-text-tertiary">
+                  Tempo estimado do serviço: {formatDuration(duration)}.
                 </p>
               )}
             </div>
