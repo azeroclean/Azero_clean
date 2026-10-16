@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
   ArrowRight,
@@ -6,38 +6,22 @@ import {
   AlertCircle,
   User,
   Phone,
-  Mail,
-  Car,
-  Hash,
-  StickyNote,
+  CheckCircle2,
 } from 'lucide-react'
 import { format } from 'date-fns'
 import { useServices } from '../hooks/useServices'
 import { useBooking } from '../context/booking-context'
 import { FlowHeader } from '../components/FlowHeader'
-import { createAppointment } from '../lib/services'
+import { createAppointment, fetchClientNameByPhone } from '../lib/services'
 import { getServicePrice } from '../data/services'
 import { VEHICLE_LABELS } from '../data/vehicles'
 
 interface FormState {
   name: string
   phone: string
-  email: string
-  make: string
-  model: string
-  plate: string
-  notes: string
 }
 
-const EMPTY_FORM: FormState = {
-  name: '',
-  phone: '',
-  email: '',
-  make: '',
-  model: '',
-  plate: '',
-  notes: '',
-}
+const EMPTY_FORM: FormState = { name: '', phone: '' }
 
 function formatPhone(value: string) {
   const digits = value.replace(/\D/g, '').slice(0, 11)
@@ -56,6 +40,11 @@ export function ClientInfo() {
   const [form, setForm] = useState<FormState>(EMPTY_FORM)
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [foundPhone, setFoundPhone] = useState<string | null>(null)
+  const submittedRef = useRef(false)
+  const digitsRef = useRef('')
+
+  const nameFound = foundPhone === form.phone
 
   const selectedServices = useMemo(
     () => services.filter((service) => selectedIds.includes(service.id)),
@@ -67,10 +56,33 @@ export function ClientInfo() {
   )
 
   useEffect(() => {
+    if (submittedRef.current) return
     if (!vehicleType || selectedIds.length === 0 || !date || !time) {
       navigate('/veiculo', { replace: true })
     }
   }, [vehicleType, selectedIds.length, date, time, navigate])
+
+  useEffect(() => {
+    const digits = form.phone.replace(/\D/g, '')
+    if (digits === digitsRef.current) return
+    digitsRef.current = digits
+
+    if (digits.length < 10) return
+
+    let active = true
+    const timer = setTimeout(() => {
+      fetchClientNameByPhone(form.phone).then((name) => {
+        if (!active || !name) return
+        setFoundPhone(form.phone)
+        setForm((prev) => (prev.name.trim() ? prev : { ...prev, name }))
+      })
+    }, 400)
+
+    return () => {
+      active = false
+      clearTimeout(timer)
+    }
+  }, [form.phone])
 
   const update = (field: keyof FormState, value: string) => {
     setForm((prev) => ({ ...prev, [field]: value }))
@@ -80,8 +92,9 @@ export function ClientInfo() {
     event?.preventDefault()
     setError(null)
 
-    if (!form.name.trim() || !form.phone.trim() || !form.make.trim() || !form.model.trim()) {
-      setError('Preencha nome, telefone, marca e modelo do veículo.')
+    const phoneDigits = form.phone.replace(/\D/g, '')
+    if (!form.name.trim() || phoneDigits.length < 10) {
+      setError('Informe seu nome e um telefone válido com DDD.')
       return
     }
 
@@ -96,15 +109,10 @@ export function ClientInfo() {
       await createAppointment({
         client_name: form.name.trim(),
         client_phone: form.phone.trim(),
-        client_email: form.email.trim() || null,
         vehicle_type: vehicleType,
-        vehicle_make: form.make.trim(),
-        vehicle_model: form.model.trim(),
-        vehicle_plate: form.plate.trim() || null,
         service_ids: selectedIds,
         date,
         time,
-        notes: form.notes.trim() || null,
         total,
       })
 
@@ -117,8 +125,9 @@ export function ClientInfo() {
         services: selectedServices.map((service) => service.title),
       }
 
-      reset()
+      submittedRef.current = true
       navigate('/confirmacao', { replace: true, state: summary })
+      reset()
     } catch {
       setError(
         'Não foi possível concluir o agendamento. Tente novamente ou fale com a gente no WhatsApp.'
@@ -139,22 +148,11 @@ export function ClientInfo() {
         <div className="mt-4 flex flex-col gap-1.5">
           <h1 className="text-base font-semibold">Quase tudo pronto!</h1>
           <p className="text-sm text-text-secondary">
-            Confirme seus dados para finalizarmos o agendamento.
+            Só precisamos do seu nome e telefone para confirmar.
           </p>
         </div>
 
         <section className="flex flex-col gap-3 rounded-3xl border border-border bg-surface p-4">
-          <h2 className="text-xs font-semibold uppercase tracking-[0.2em] text-text-tertiary">
-            Contato
-          </h2>
-
-          <Field
-            icon={<User className="h-4 w-4" />}
-            label="Nome completo"
-            value={form.name}
-            onChange={(value) => update('name', value)}
-            placeholder="Seu nome"
-          />
           <Field
             icon={<Phone className="h-4 w-4" />}
             label="Telefone / WhatsApp"
@@ -164,19 +162,24 @@ export function ClientInfo() {
             inputMode="tel"
           />
           <Field
-            icon={<Mail className="h-4 w-4" />}
-            label="E-mail (opcional)"
-            value={form.email}
-            onChange={(value) => update('email', value)}
-            placeholder="seu@email.com"
-            type="email"
+            icon={<User className="h-4 w-4" />}
+            label="Nome completo"
+            value={form.name}
+            onChange={(value) => update('name', value)}
+            placeholder="Seu nome"
           />
+          {nameFound && (
+            <p className="flex items-center gap-1.5 text-[11px] text-accent">
+              <CheckCircle2 className="h-3.5 w-3.5" />
+              Encontramos seu cadastro! Confira o nome.
+            </p>
+          )}
         </section>
 
-        <section className="flex flex-col gap-3 rounded-3xl border border-border bg-surface p-4">
+        <section className="flex flex-col gap-2 rounded-3xl border border-primary/30 bg-primary/5 p-4">
           <div className="flex items-center justify-between">
-            <h2 className="text-xs font-semibold uppercase tracking-[0.2em] text-text-tertiary">
-              Veículo
+            <h2 className="text-xs font-semibold uppercase tracking-[0.2em] text-primary">
+              Resumo
             </h2>
             {vehicleType && (
               <span className="rounded-full border border-primary/40 bg-primary/10 px-2.5 py-0.5 text-[10px] uppercase tracking-[0.2em] text-primary">
@@ -184,50 +187,6 @@ export function ClientInfo() {
               </span>
             )}
           </div>
-
-          <div className="grid grid-cols-2 gap-3">
-            <Field
-              icon={<Car className="h-4 w-4" />}
-              label="Marca"
-              value={form.make}
-              onChange={(value) => update('make', value)}
-              placeholder="Ex: Honda"
-            />
-            <Field
-              icon={<Car className="h-4 w-4" />}
-              label="Modelo"
-              value={form.model}
-              onChange={(value) => update('model', value)}
-              placeholder="Ex: Civic"
-            />
-          </div>
-          <Field
-            icon={<Hash className="h-4 w-4" />}
-            label="Placa (opcional)"
-            value={form.plate}
-            onChange={(value) => update('plate', value.toUpperCase())}
-            placeholder="ABC-1D23"
-          />
-        </section>
-
-        <section className="flex flex-col gap-2 rounded-3xl border border-border bg-surface p-4">
-          <label className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.2em] text-text-tertiary">
-            <StickyNote className="h-3.5 w-3.5" />
-            Observações (opcional)
-          </label>
-          <textarea
-            value={form.notes}
-            onChange={(event) => update('notes', event.target.value)}
-            rows={3}
-            placeholder="Alguma informação extra sobre o veículo?"
-            className="w-full resize-none rounded-2xl border border-border bg-surface-2 px-3 py-2.5 text-sm text-text placeholder:text-text-tertiary focus:border-primary/70 focus:outline-none focus:ring-2 focus:ring-primary/20"
-          />
-        </section>
-
-        <section className="flex flex-col gap-2 rounded-3xl border border-primary/30 bg-primary/5 p-4">
-          <h2 className="text-xs font-semibold uppercase tracking-[0.2em] text-primary">
-            Resumo
-          </h2>
           <ul className="flex flex-col gap-1 text-sm">
             {selectedServices.map((service) => (
               <li key={service.id} className="flex justify-between text-text-secondary">
@@ -293,7 +252,6 @@ interface FieldProps {
   value: string
   onChange: (value: string) => void
   placeholder?: string
-  type?: string
   inputMode?: 'text' | 'tel' | 'email'
 }
 
@@ -303,7 +261,6 @@ function Field({
   value,
   onChange,
   placeholder,
-  type = 'text',
   inputMode = 'text',
 }: FieldProps) {
   return (
@@ -314,7 +271,6 @@ function Field({
       </span>
       <input
         value={value}
-        type={type}
         inputMode={inputMode}
         onChange={(event) => onChange(event.target.value)}
         placeholder={placeholder}

@@ -9,8 +9,8 @@ export interface NewAppointment {
   client_phone: string
   client_email?: string | null
   vehicle_type: VehicleType
-  vehicle_make: string
-  vehicle_model: string
+  vehicle_make?: string | null
+  vehicle_model?: string | null
   vehicle_plate?: string | null
   service_ids: string[]
   date: string
@@ -124,6 +124,27 @@ export async function fetchBookedSlots(date: string): Promise<string[]> {
     return [...new Set((data as { time: string }[]).map((row) => row.time))]
   } catch {
     return []
+  }
+}
+
+export async function fetchClientNameByPhone(phone: string): Promise<string | null> {
+  if (!isConfigured() || !phone.trim()) return null
+
+  try {
+    const supabase = await getClient()
+    const { data, error } = await supabase
+      .from('appointments')
+      .select('client_name')
+      .eq('client_phone', phone.trim())
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle()
+
+    if (error || !data) return null
+
+    return (data as { client_name: string }).client_name ?? null
+  } catch {
+    return null
   }
 }
 

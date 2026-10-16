@@ -35,8 +35,8 @@ create table if not exists public.appointments (
   client_email text,
   vehicle_type text not null default 'carro'
     check (vehicle_type in ('moto', 'carro', 'caminhonete')),
-  vehicle_make text not null,
-  vehicle_model text not null,
+  vehicle_make text,
+  vehicle_model text,
   vehicle_plate text,
   service_ids uuid[] not null default '{}',
   date date not null,

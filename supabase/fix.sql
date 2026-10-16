@@ -33,8 +33,8 @@ create table public.appointments (
   client_email text,
   vehicle_type text not null default 'carro'
     check (vehicle_type in ('moto', 'carro', 'caminhonete')),
-  vehicle_make text not null,
-  vehicle_model text not null,
+  vehicle_make text,
+  vehicle_model text,
   vehicle_plate text,
   service_ids uuid[] not null default '{}',
   date date not null,
@@ -53,6 +53,12 @@ create policy "appointments_public_insert"
   on public.appointments for insert
   to anon, authenticated
   with check (true);
+
+drop policy if exists "appointments_public_select" on public.appointments;
+create policy "appointments_public_select"
+  on public.appointments for select
+  to anon, authenticated
+  using (true);
 
 drop policy if exists "appointments_admin_all" on public.appointments;
 create policy "appointments_admin_all"
