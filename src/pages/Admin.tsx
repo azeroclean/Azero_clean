@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import {
   LayoutDashboard,
@@ -7,370 +7,560 @@ import {
   DollarSign,
   TrendingUp,
   Clock,
-  CheckCircle2,
-  XCircle,
+  Check,
+  X,
   Car,
-  LogOut,
+  ExternalLink,
+  Search,
+  MessageCircle,
+  ChevronRight,
+  Inbox,
 } from 'lucide-react'
+import type { LucideIcon } from 'lucide-react'
+import { format } from 'date-fns'
+import { ptBR } from 'date-fns/locale'
 
-const mockAppointments = [
-  {
-    id: 1,
-    client: 'João Silva',
-    service: 'Lavagem Completa',
-    date: '2026-10-17',
-    time: '08:30',
-    status: 'confirmado',
-    vehicle: 'Honda Civic',
-    phone: '(88) 99999-0001',
-  },
-  {
-    id: 2,
-    client: 'Maria Santos',
-    service: 'Higienização Interna',
-    date: '2026-10-17',
-    time: '11:00',
-    status: 'pendente',
-    vehicle: 'Toyota Corolla',
-    phone: '(88) 99999-0002',
-  },
-  {
-    id: 3,
-    client: 'Pedro Oliveira',
-    service: 'Proteção de Pintura',
-    date: '2026-10-18',
-    time: '14:00',
-    status: 'confirmado',
-    vehicle: 'VW Golf',
-    phone: '(88) 99999-0003',
-  },
-  {
-    id: 4,
-    client: 'Ana Costa',
-    service: 'Lavagem Completa',
-    date: '2026-10-18',
-    time: '15:30',
-    status: 'cancelado',
-    vehicle: 'Hyundai HB20',
-    phone: '(88) 99999-0004',
-  },
-  {
-    id: 5,
-    client: 'Carlos Lima',
-    service: 'Higienização Interna',
-    date: '2026-10-19',
-    time: '09:30',
-    status: 'pendente',
-    vehicle: 'Fiat Argo',
-    phone: '(88) 99999-0005',
-  },
+type Status = 'pendente' | 'confirmado' | 'cancelado' | 'concluido'
+type Tab = 'dashboard' | 'agendamentos' | 'clientes' | 'veiculos'
+
+interface AdminAppointment {
+  id: number
+  client: string
+  service: string
+  date: string
+  time: string
+  status: Status
+  vehicle: string
+  phone: string
+  total: number
+}
+
+// Dados de exemplo enquanto o painel não tem login de administrador.
+const MOCK_APPOINTMENTS: AdminAppointment[] = [
+  { id: 1, client: 'João Silva', service: 'Lavagem Completa', date: '2026-10-17', time: '08:30', status: 'confirmado', vehicle: 'Honda Civic', phone: '(88) 99999-0001', total: 60 },
+  { id: 2, client: 'Maria Santos', service: 'Higienização Interna', date: '2026-10-17', time: '11:00', status: 'pendente', vehicle: 'Toyota Corolla', phone: '(88) 99999-0002', total: 150 },
+  { id: 3, client: 'Pedro Oliveira', service: 'Proteção de Pintura', date: '2026-10-18', time: '14:00', status: 'confirmado', vehicle: 'VW Golf', phone: '(88) 99999-0003', total: 280 },
+  { id: 4, client: 'Ana Costa', service: 'Lavagem Completa', date: '2026-10-18', time: '15:30', status: 'cancelado', vehicle: 'Hyundai HB20', phone: '(88) 99999-0004', total: 60 },
+  { id: 5, client: 'Carlos Lima', service: 'Higienização Interna', date: '2026-10-19', time: '09:30', status: 'pendente', vehicle: 'Fiat Argo', phone: '(88) 99999-0005', total: 150 },
+  { id: 6, client: 'João Silva', service: 'Higienização Interna', date: '2026-10-16', time: '14:00', status: 'concluido', vehicle: 'Honda Civic', phone: '(88) 99999-0001', total: 150 },
 ]
 
-const stats = [
-  {
-    label: 'Agendamentos Hoje',
-    value: '12',
-    change: '+3',
-    icon: Calendar,
-    color: 'text-primary',
-  },
-  {
-    label: 'Receita do Mês',
-    value: 'R$ 4.850',
-    change: '+18%',
-    icon: DollarSign,
-    color: 'text-accent',
-  },
-  {
-    label: 'Clientes Ativos',
-    value: '156',
-    change: '+12',
-    icon: Users,
-    color: 'text-primary',
-  },
-  {
-    label: 'Taxa de Conclusão',
-    value: '94%',
-    change: '+2%',
-    icon: TrendingUp,
-    color: 'text-accent',
-  },
+const NAV: { id: Tab; label: string; icon: LucideIcon }[] = [
+  { id: 'dashboard', label: 'Início', icon: LayoutDashboard },
+  { id: 'agendamentos', label: 'Agendamentos', icon: Calendar },
+  { id: 'clientes', label: 'Clientes', icon: Users },
+  { id: 'veiculos', label: 'Veículos', icon: Car },
 ]
+
+const STATUS_STYLE: Record<Status, { label: string; className: string }> = {
+  pendente: { label: 'Pendente', className: 'bg-amber-50 text-amber-700 ring-amber-200' },
+  confirmado: { label: 'Confirmado', className: 'bg-emerald-50 text-emerald-700 ring-emerald-200' },
+  concluido: { label: 'Concluído', className: 'bg-indigo-50 text-indigo-700 ring-indigo-200' },
+  cancelado: { label: 'Cancelado', className: 'bg-red-50 text-red-600 ring-red-200' },
+}
+
+const FILTERS: ('todos' | Status)[] = ['todos', 'pendente', 'confirmado', 'concluido', 'cancelado']
+
+const money = (value: number) =>
+  value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: 0 })
+
+const shortDate = (iso: string) =>
+  format(new Date(`${iso}T00:00:00`), "dd 'de' MMM", { locale: ptBR }).replace('.', '')
+
+const waLink = (phone: string) => `https://wa.me/55${phone.replace(/\D/g, '')}`
 
 export function Admin() {
-  const [activeTab, setActiveTab] = useState('dashboard')
-  const [filterStatus, setFilterStatus] = useState('todos')
+  const [tab, setTab] = useState<Tab>('dashboard')
+  const [filter, setFilter] = useState<'todos' | Status>('todos')
+  const [query, setQuery] = useState('')
+  const [appointments, setAppointments] = useState(MOCK_APPOINTMENTS)
+  const [now] = useState(() => new Date())
 
-  const filteredAppointments = mockAppointments.filter((apt) => {
-    if (filterStatus === 'todos') return true
-    return apt.status === filterStatus
-  })
+  const setStatus = (id: number, status: Status) =>
+    setAppointments((prev) => prev.map((a) => (a.id === id ? { ...a, status } : a)))
 
-  const statusColors = {
-    confirmado: 'text-accent border-accent/40 bg-accent/10',
-    pendente: 'text-yellow-400 border-yellow-400/40 bg-yellow-400/10',
-    cancelado: 'text-red-400 border-red-400/40 bg-red-400/10',
-  }
+  const sorted = useMemo(
+    () => [...appointments].sort((a, b) => `${a.date}${a.time}`.localeCompare(`${b.date}${b.time}`)),
+    [appointments]
+  )
+
+  const todayIso = format(now, 'yyyy-MM-dd')
+  const monthIso = todayIso.slice(0, 7)
+
+  const stats = useMemo(() => {
+    const active = appointments.filter((a) => a.status !== 'cancelado')
+    const today = active.filter((a) => a.date === todayIso).length
+    const revenue = active
+      .filter((a) => a.date.startsWith(monthIso))
+      .reduce((acc, a) => acc + a.total, 0)
+    const clients = new Set(appointments.map((a) => a.phone)).size
+    const pending = appointments.filter((a) => a.status === 'pendente').length
+    return [
+      { label: 'Agendamentos hoje', value: String(today), icon: Calendar },
+      { label: 'Receita prevista no mês', value: money(revenue), icon: DollarSign },
+      { label: 'Clientes', value: String(clients), icon: Users },
+      { label: 'Aguardando confirmação', value: String(pending), icon: TrendingUp },
+    ]
+  }, [appointments, todayIso, monthIso])
+
+  const upcoming = sorted.filter(
+    (a) => a.date >= todayIso && (a.status === 'pendente' || a.status === 'confirmado')
+  )
+
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase()
+    return sorted.filter(
+      (a) =>
+        (filter === 'todos' || a.status === filter) &&
+        (!q || `${a.client} ${a.phone} ${a.service} ${a.vehicle}`.toLowerCase().includes(q))
+    )
+  }, [sorted, filter, query])
+
+  const clients = useMemo(() => {
+    const map = new Map<string, { name: string; phone: string; vehicles: Set<string>; visits: number; last: string }>()
+    for (const a of sorted) {
+      const entry = map.get(a.phone) ?? { name: a.client, phone: a.phone, vehicles: new Set(), visits: 0, last: a.date }
+      entry.vehicles.add(a.vehicle)
+      if (a.status !== 'cancelado') entry.visits += 1
+      entry.last = a.date
+      map.set(a.phone, entry)
+    }
+    return [...map.values()].sort((a, b) => a.name.localeCompare(b.name))
+  }, [sorted])
+
+  const vehicles = useMemo(() => {
+    const map = new Map<string, { name: string; owner: string; services: number }>()
+    for (const a of appointments) {
+      const key = `${a.vehicle}|${a.phone}`
+      const entry = map.get(key) ?? { name: a.vehicle, owner: a.client, services: 0 }
+      if (a.status !== 'cancelado') entry.services += 1
+      map.set(key, entry)
+    }
+    return [...map.values()].sort((a, b) => a.name.localeCompare(b.name))
+  }, [appointments])
+
+  const pendingCount = appointments.filter((a) => a.status === 'pendente').length
+  const current = NAV.find((n) => n.id === tab)!
 
   return (
-    <div className="min-h-screen bg-bg text-text">
-      <header className="sticky top-0 z-10 border-b border-border bg-bg/95 backdrop-blur">
-        <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-3">
-          <div className="flex items-center gap-3">
-            <div className="flex h-9 w-9 items-center justify-center rounded-full border border-primary/60 bg-primary/10">
-              <span className="text-sm font-bold text-primary">AC</span>
-            </div>
-            <span className="text-sm font-semibold uppercase tracking-[0.3em] text-text-secondary">
-              Admin
-            </span>
-          </div>
-          <div className="flex items-center gap-3">
-            <Link
-              to="/"
-              className="flex items-center gap-1.5 rounded-full border border-border px-3 py-1.5 text-xs text-text-secondary transition hover:border-primary/60 hover:text-primary"
-            >
-              <LogOut className="h-3.5 w-3.5" />
-              Ver Site
-            </Link>
-          </div>
-        </div>
-      </header>
-
-      <div className="mx-auto flex max-w-6xl gap-6 px-4 py-6">
-        <aside className="hidden w-56 shrink-0 flex-col gap-1 md:flex">
-          {[
-            { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
-            { id: 'agendamentos', label: 'Agendamentos', icon: Calendar },
-            { id: 'clientes', label: 'Clientes', icon: Users },
-            { id: 'veiculos', label: 'Veículos', icon: Car },
-          ].map((item) => (
+    <div className="min-h-screen bg-bg text-text lg:flex">
+      {/* Barra lateral — computador */}
+      <aside className="sticky top-0 hidden h-screen w-64 shrink-0 flex-col border-r border-border bg-surface p-4 lg:flex">
+        <Brand />
+        <nav className="mt-8 flex flex-col gap-1">
+          {NAV.map((item) => (
             <button
               key={item.id}
               type="button"
-              onClick={() => setActiveTab(item.id)}
-              className={`flex items-center gap-2 rounded-xl px-3 py-2 text-sm transition ${
-                activeTab === item.id
-                  ? 'bg-primary/10 text-primary'
-                  : 'text-text-secondary hover:bg-surface hover:text-text'
+              onClick={() => setTab(item.id)}
+              className={`flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition ${
+                tab === item.id
+                  ? 'bg-ink text-white'
+                  : 'text-text-secondary hover:bg-surface-2 hover:text-text'
               }`}
             >
               <item.icon className="h-4 w-4" />
               {item.label}
+              {item.id === 'agendamentos' && pendingCount > 0 && (
+                <span className="ml-auto rounded-full bg-primary px-2 py-0.5 text-[10px] font-bold text-white">
+                  {pendingCount}
+                </span>
+              )}
             </button>
           ))}
-        </aside>
+        </nav>
+        <Link
+          to="/"
+          className="mt-auto flex items-center gap-2 rounded-xl px-3 py-2.5 text-sm text-text-secondary transition hover:bg-surface-2 hover:text-text"
+        >
+          <ExternalLink className="h-4 w-4" />
+          Ver site
+        </Link>
+      </aside>
 
-        <main className="flex-1">
-          {activeTab === 'dashboard' && (
+      <div className="flex min-w-0 flex-1 flex-col">
+        <header className="sticky top-0 z-20 border-b border-border bg-surface/95 backdrop-blur">
+          <div className="mx-auto flex max-w-6xl items-center justify-between gap-3 px-4 py-3 lg:px-8 lg:py-5">
+            <div className="flex items-center gap-3">
+              <div className="lg:hidden">
+                <Brand compact />
+              </div>
+              <div>
+                <h1 className="text-base font-bold lg:text-xl">{current.label}</h1>
+                <p className="hidden text-xs text-text-secondary first-letter:uppercase lg:block">
+                  {format(now, "EEEE, d 'de' MMMM", { locale: ptBR })}
+                </p>
+              </div>
+            </div>
+            <Link
+              to="/"
+              className="flex h-9 w-9 items-center justify-center rounded-full bg-surface-2 text-text-secondary transition hover:text-text lg:hidden"
+              aria-label="Ver site"
+            >
+              <ExternalLink className="h-4 w-4" />
+            </Link>
+          </div>
+        </header>
+
+        <main className="mx-auto w-full max-w-6xl flex-1 px-4 pb-28 pt-4 lg:px-8 lg:pb-10 lg:pt-6">
+          {tab === 'dashboard' && (
             <div className="flex flex-col gap-6">
-              <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+              <div className="grid grid-cols-2 gap-3 lg:grid-cols-4 lg:gap-4">
                 {stats.map((stat) => (
-                  <div
-                    key={stat.label}
-                    className="flex flex-col gap-2 rounded-2xl border border-border bg-surface p-4"
-                  >
-                    <div className="flex items-center justify-between">
-                      <stat.icon className={`h-5 w-5 ${stat.color}`} />
-                      <span className="text-xs text-accent">{stat.change}</span>
-                    </div>
-                    <div className="flex flex-col">
-                      <span className="text-xl font-semibold">{stat.value}</span>
-                      <span className="text-xs text-text-secondary">{stat.label}</span>
+                  <div key={stat.label} className="flex flex-col gap-3 rounded-2xl bg-surface p-4 shadow-sm lg:p-5">
+                    <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary/10 text-primary-600">
+                      <stat.icon className="h-4 w-4" />
+                    </span>
+                    <div className="min-w-0">
+                      <p className="truncate text-xl font-bold lg:text-2xl">{stat.value}</p>
+                      <p className="text-xs text-text-secondary">{stat.label}</p>
                     </div>
                   </div>
                 ))}
               </div>
 
-              <div className="flex flex-col gap-3">
-                <div className="flex items-center justify-between">
-                  <h2 className="text-base font-semibold">Agendamentos Recentes</h2>
-                  <button
-                    type="button"
-                    onClick={() => setActiveTab('agendamentos')}
-                    className="text-xs font-medium text-primary"
-                  >
-                    Ver todos
-                  </button>
+              <div className="grid gap-6 lg:grid-cols-5">
+                <section className="flex flex-col gap-3 lg:col-span-3">
+                  <SectionTitle
+                    title="Próximos agendamentos"
+                    action={{ label: 'Ver todos', onClick: () => setTab('agendamentos') }}
+                  />
+                  <AppointmentList items={upcoming.slice(0, 5)} onStatus={setStatus} />
+                </section>
+
+                <section className="flex flex-col gap-3 lg:col-span-2">
+                  <SectionTitle title="Por status" />
+                  <div className="flex flex-col gap-2 rounded-2xl bg-surface p-4 shadow-sm">
+                    {(Object.keys(STATUS_STYLE) as Status[]).map((status) => {
+                      const count = appointments.filter((a) => a.status === status).length
+                      const pct = appointments.length ? (count / appointments.length) * 100 : 0
+                      return (
+                        <button
+                          key={status}
+                          type="button"
+                          onClick={() => {
+                            setFilter(status)
+                            setTab('agendamentos')
+                          }}
+                          className="flex flex-col gap-1.5 rounded-xl p-2 text-left transition hover:bg-surface-2"
+                        >
+                          <span className="flex items-center justify-between text-sm">
+                            <StatusPill status={status} />
+                            <span className="font-semibold">{count}</span>
+                          </span>
+                          <span className="h-1.5 overflow-hidden rounded-full bg-surface-2">
+                            <span className="block h-full rounded-full bg-primary" style={{ width: `${pct}%` }} />
+                          </span>
+                        </button>
+                      )
+                    })}
+                  </div>
+                </section>
+              </div>
+            </div>
+          )}
+
+          {tab === 'agendamentos' && (
+            <div className="flex flex-col gap-4">
+              <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                <div className="no-scrollbar -mx-4 flex gap-2 overflow-x-auto px-4 lg:mx-0 lg:px-0">
+                  {FILTERS.map((status) => (
+                    <button
+                      key={status}
+                      type="button"
+                      onClick={() => setFilter(status)}
+                      className={`shrink-0 rounded-full px-4 py-2 text-xs font-semibold transition ${
+                        filter === status
+                          ? 'bg-ink text-white'
+                          : 'bg-surface text-text-secondary shadow-sm hover:text-text'
+                      }`}
+                    >
+                      {status === 'todos' ? 'Todos' : STATUS_STYLE[status].label}
+                    </button>
+                  ))}
                 </div>
-                <div className="overflow-hidden rounded-2xl border border-border">
+                <SearchInput value={query} onChange={setQuery} placeholder="Buscar cliente, serviço..." />
+              </div>
+
+              {/* Celular: cards */}
+              <div className="lg:hidden">
+                <AppointmentList items={filtered} onStatus={setStatus} />
+              </div>
+
+              {/* Computador: tabela */}
+              <div className="hidden overflow-hidden rounded-2xl bg-surface shadow-sm lg:block">
+                {filtered.length === 0 ? (
+                  <Empty />
+                ) : (
                   <table className="w-full text-left text-sm">
-                    <thead className="border-b border-border bg-surface">
+                    <thead className="border-b border-border text-xs text-text-secondary">
                       <tr>
-                        <th className="px-4 py-3 text-xs font-medium text-text-secondary">Cliente</th>
-                        <th className="px-4 py-3 text-xs font-medium text-text-secondary">Serviço</th>
-                        <th className="px-4 py-3 text-xs font-medium text-text-secondary">Data</th>
-                        <th className="px-4 py-3 text-xs font-medium text-text-secondary">Status</th>
+                        <th className="px-5 py-3 font-medium">Cliente</th>
+                        <th className="px-5 py-3 font-medium">Serviço</th>
+                        <th className="px-5 py-3 font-medium">Veículo</th>
+                        <th className="px-5 py-3 font-medium">Data</th>
+                        <th className="px-5 py-3 font-medium">Valor</th>
+                        <th className="px-5 py-3 font-medium">Status</th>
+                        <th className="px-5 py-3 text-right font-medium">Ações</th>
                       </tr>
                     </thead>
                     <tbody>
-                      {mockAppointments.slice(0, 5).map((apt) => (
-                        <tr key={apt.id} className="border-b border-border/50 last:border-0">
-                          <td className="px-4 py-3">
-                            <div className="flex flex-col">
-                              <span className="font-medium">{apt.client}</span>
-                              <span className="text-xs text-text-tertiary">{apt.vehicle}</span>
+                      {filtered.map((apt) => (
+                        <tr key={apt.id} className="border-b border-border/60 last:border-0 hover:bg-bg">
+                          <td className="px-5 py-3">
+                            <p className="font-semibold">{apt.client}</p>
+                            <p className="text-xs text-text-tertiary">{apt.phone}</p>
+                          </td>
+                          <td className="px-5 py-3 text-text-secondary">{apt.service}</td>
+                          <td className="px-5 py-3 text-text-secondary">{apt.vehicle}</td>
+                          <td className="whitespace-nowrap px-5 py-3 text-text-secondary">
+                            {shortDate(apt.date)} · {apt.time}
+                          </td>
+                          <td className="px-5 py-3 font-medium">{money(apt.total)}</td>
+                          <td className="px-5 py-3">
+                            <StatusPill status={apt.status} />
+                          </td>
+                          <td className="px-5 py-3">
+                            <div className="flex justify-end">
+                              <Actions apt={apt} onStatus={setStatus} />
                             </div>
-                          </td>
-                          <td className="px-4 py-3 text-text-secondary">{apt.service}</td>
-                          <td className="px-4 py-3 text-text-secondary">
-                            {apt.date} {apt.time}
-                          </td>
-                          <td className="px-4 py-3">
-                            <span
-                              className={`rounded-full border px-2 py-0.5 text-[10px] font-medium ${statusColors[apt.status as keyof typeof statusColors]}`}
-                            >
-                              {apt.status}
-                            </span>
                           </td>
                         </tr>
                       ))}
                     </tbody>
                   </table>
-                </div>
+                )}
               </div>
             </div>
           )}
 
-          {activeTab === 'agendamentos' && (
-            <div className="flex flex-col gap-4">
-              <div className="flex items-center justify-between">
-                <h2 className="text-base font-semibold">Agendamentos</h2>
-                <div className="flex gap-2">
-                  {['todos', 'confirmado', 'pendente', 'cancelado'].map((status) => (
-                    <button
-                      key={status}
-                      type="button"
-                      onClick={() => setFilterStatus(status)}
-                      className={`rounded-full border px-3 py-1 text-xs font-medium transition ${
-                        filterStatus === status
-                          ? 'border-primary/60 bg-primary/10 text-primary'
-                          : 'border-border text-text-secondary hover:border-primary/40'
-                      }`}
-                    >
-                      {status.charAt(0).toUpperCase() + status.slice(1)}
-                    </button>
-                  ))}
-                </div>
-              </div>
-              <div className="overflow-hidden rounded-2xl border border-border">
-                <table className="w-full text-left text-sm">
-                  <thead className="border-b border-border bg-surface">
-                    <tr>
-                      <th className="px-4 py-3 text-xs font-medium text-text-secondary">Cliente</th>
-                      <th className="px-4 py-3 text-xs font-medium text-text-secondary">Serviço</th>
-                      <th className="px-4 py-3 text-xs font-medium text-text-secondary">Veículo</th>
-                      <th className="px-4 py-3 text-xs font-medium text-text-secondary">Data/Hora</th>
-                      <th className="px-4 py-3 text-xs font-medium text-text-secondary">Status</th>
-                      <th className="px-4 py-3 text-xs font-medium text-text-secondary">Ações</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {filteredAppointments.map((apt) => (
-                      <tr key={apt.id} className="border-b border-border/50 last:border-0">
-                        <td className="px-4 py-3">
-                          <div className="flex flex-col">
-                            <span className="font-medium">{apt.client}</span>
-                            <span className="text-xs text-text-tertiary">{apt.phone}</span>
-                          </div>
-                        </td>
-                        <td className="px-4 py-3 text-text-secondary">{apt.service}</td>
-                        <td className="px-4 py-3 text-text-secondary">{apt.vehicle}</td>
-                        <td className="px-4 py-3 text-text-secondary">
-                          <div className="flex items-center gap-1.5">
-                            <Clock className="h-3.5 w-3.5" />
-                            {apt.date} {apt.time}
-                          </div>
-                        </td>
-                        <td className="px-4 py-3">
-                          <span
-                            className={`rounded-full border px-2 py-0.5 text-[10px] font-medium ${statusColors[apt.status as keyof typeof statusColors]}`}
-                          >
-                            {apt.status}
-                          </span>
-                        </td>
-                        <td className="px-4 py-3">
-                          <div className="flex gap-1">
-                            {apt.status === 'pendente' && (
-                              <>
-                                <button
-                                  type="button"
-                                  className="flex h-7 w-7 items-center justify-center rounded-full border border-accent/40 text-accent transition hover:bg-accent/10"
-                                  title="Confirmar"
-                                >
-                                  <CheckCircle2 className="h-3.5 w-3.5" />
-                                </button>
-                                <button
-                                  type="button"
-                                  className="flex h-7 w-7 items-center justify-center rounded-full border border-red-400/40 text-red-400 transition hover:bg-red-400/10"
-                                  title="Cancelar"
-                                >
-                                  <XCircle className="h-3.5 w-3.5" />
-                                </button>
-                              </>
-                            )}
-                          </div>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          )}
-
-          {activeTab === 'clientes' && (
-            <div className="flex flex-col gap-4">
-              <h2 className="text-base font-semibold">Clientes</h2>
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                {mockAppointments.map((apt) => (
-                  <div
-                    key={apt.id}
-                    className="flex flex-col gap-2 rounded-2xl border border-border bg-surface p-4"
-                  >
-                    <div className="flex items-center gap-3">
-                      <div className="flex h-10 w-10 items-center justify-center rounded-full border border-primary/40 bg-primary/10">
-                        <span className="text-sm font-bold text-primary">
-                          {apt.client.charAt(0)}
-                        </span>
-                      </div>
-                      <div className="flex flex-col">
-                        <span className="text-sm font-semibold">{apt.client}</span>
-                        <span className="text-xs text-text-tertiary">{apt.phone}</span>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-2 text-xs text-text-secondary">
-                      <Car className="h-3.5 w-3.5" />
-                      {apt.vehicle}
-                    </div>
+          {tab === 'clientes' && (
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
+              {clients.map((c) => (
+                <div key={c.phone} className="flex items-center gap-3 rounded-2xl bg-surface p-4 shadow-sm">
+                  <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-ink text-sm font-bold text-white">
+                    {c.name.split(' ').map((p) => p[0]).slice(0, 2).join('')}
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm font-semibold">{c.name}</p>
+                    <p className="text-xs text-text-tertiary">{c.phone}</p>
+                    <p className="mt-1 truncate text-xs text-text-secondary">
+                      {c.visits} {c.visits === 1 ? 'visita' : 'visitas'} · {[...c.vehicles].join(', ')}
+                    </p>
                   </div>
-                ))}
-              </div>
+                  <a
+                    href={waLink(c.phone)}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary-600 transition hover:bg-primary/20"
+                    aria-label={`WhatsApp de ${c.name}`}
+                  >
+                    <MessageCircle className="h-4 w-4" />
+                  </a>
+                </div>
+              ))}
             </div>
           )}
 
-          {activeTab === 'veiculos' && (
-            <div className="flex flex-col gap-4">
-              <h2 className="text-base font-semibold">Veículos</h2>
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                {mockAppointments.map((apt) => (
-                  <div
-                    key={apt.id}
-                    className="flex items-center gap-3 rounded-2xl border border-border bg-surface p-4"
-                  >
-                    <div className="flex h-10 w-10 items-center justify-center rounded-full border border-primary/40 bg-primary/10">
-                      <Car className="h-5 w-5 text-primary" />
-                    </div>
-                    <div className="flex flex-col">
-                      <span className="text-sm font-semibold">{apt.vehicle}</span>
-                      <span className="text-xs text-text-tertiary">{apt.client}</span>
-                    </div>
+          {tab === 'veiculos' && (
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
+              {vehicles.map((v) => (
+                <div key={`${v.name}-${v.owner}`} className="flex items-center gap-3 rounded-2xl bg-surface p-4 shadow-sm">
+                  <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-surface-2 text-lilac">
+                    <Car className="h-5 w-5" />
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm font-semibold">{v.name}</p>
+                    <p className="text-xs text-text-tertiary">{v.owner}</p>
                   </div>
-                ))}
-              </div>
+                  <span className="shrink-0 text-xs text-text-secondary">
+                    {v.services} {v.services === 1 ? 'serviço' : 'serviços'}
+                  </span>
+                </div>
+              ))}
             </div>
           )}
         </main>
       </div>
+
+      {/* Barra de abas — celular */}
+      <nav className="fixed inset-x-0 bottom-0 z-30 border-t border-border bg-surface pb-[env(safe-area-inset-bottom)] lg:hidden">
+        <div className="mx-auto grid max-w-md grid-cols-4">
+          {NAV.map((item) => {
+            const active = tab === item.id
+            return (
+              <button
+                key={item.id}
+                type="button"
+                onClick={() => setTab(item.id)}
+                aria-current={active ? 'page' : undefined}
+                className={`relative flex flex-col items-center gap-1 py-2.5 text-[11px] font-medium transition ${
+                  active ? 'text-text' : 'text-text-tertiary'
+                }`}
+              >
+                <span
+                  className={`flex h-8 w-12 items-center justify-center rounded-full transition ${
+                    active ? 'bg-primary/15 text-primary-600' : ''
+                  }`}
+                >
+                  <item.icon className="h-5 w-5" />
+                </span>
+                {item.label}
+                {item.id === 'agendamentos' && pendingCount > 0 && (
+                  <span className="absolute right-[22%] top-1.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-primary px-1 text-[9px] font-bold text-white">
+                    {pendingCount}
+                  </span>
+                )}
+              </button>
+            )
+          })}
+        </div>
+      </nav>
+    </div>
+  )
+}
+
+function Brand({ compact }: { compact?: boolean }) {
+  return (
+    <div className="flex items-center gap-3">
+      <span className="flex h-9 w-9 items-center justify-center rounded-full bg-ink text-xs font-black text-white">
+        AC
+      </span>
+      {!compact && (
+        <div>
+          <p className="text-sm font-bold">Azero Clean</p>
+          <p className="text-[11px] text-text-tertiary">Painel administrativo</p>
+        </div>
+      )}
+    </div>
+  )
+}
+
+function SectionTitle({ title, action }: { title: string; action?: { label: string; onClick: () => void } }) {
+  return (
+    <div className="flex items-center justify-between">
+      <h2 className="text-sm font-semibold">{title}</h2>
+      {action && (
+        <button
+          type="button"
+          onClick={action.onClick}
+          className="flex items-center gap-0.5 text-xs font-semibold text-primary-600"
+        >
+          {action.label}
+          <ChevronRight className="h-3.5 w-3.5" />
+        </button>
+      )}
+    </div>
+  )
+}
+
+function SearchInput({ value, onChange, placeholder }: { value: string; onChange: (v: string) => void; placeholder: string }) {
+  return (
+    <label className="relative block lg:w-72">
+      <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-lilac" />
+      <input
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder={placeholder}
+        className="w-full rounded-full border-2 border-transparent bg-surface py-2.5 pl-10 pr-4 text-sm shadow-sm placeholder:text-text-tertiary focus:border-primary/60 focus:outline-none"
+      />
+    </label>
+  )
+}
+
+function StatusPill({ status }: { status: Status }) {
+  const style = STATUS_STYLE[status]
+  return (
+    <span className={`inline-flex rounded-full px-2.5 py-0.5 text-[11px] font-semibold ring-1 ${style.className}`}>
+      {style.label}
+    </span>
+  )
+}
+
+function Actions({ apt, onStatus }: { apt: AdminAppointment; onStatus: (id: number, s: Status) => void }) {
+  if (apt.status === 'pendente') {
+    return (
+      <div className="flex gap-2">
+        <button
+          type="button"
+          onClick={() => onStatus(apt.id, 'confirmado')}
+          className="flex h-8 items-center gap-1 rounded-full bg-primary px-3 text-xs font-semibold text-white transition hover:bg-primary-600"
+        >
+          <Check className="h-3.5 w-3.5" strokeWidth={3} />
+          Confirmar
+        </button>
+        <button
+          type="button"
+          onClick={() => onStatus(apt.id, 'cancelado')}
+          className="flex h-8 w-8 items-center justify-center rounded-full bg-red-50 text-red-600 transition hover:bg-red-100"
+          aria-label="Cancelar agendamento"
+          title="Cancelar"
+        >
+          <X className="h-4 w-4" />
+        </button>
+      </div>
+    )
+  }
+  if (apt.status === 'confirmado') {
+    return (
+      <button
+        type="button"
+        onClick={() => onStatus(apt.id, 'concluido')}
+        className="flex h-8 items-center gap-1 rounded-full bg-ink px-3 text-xs font-semibold text-white transition hover:bg-ink-2"
+      >
+        <Check className="h-3.5 w-3.5" />
+        Concluir
+      </button>
+    )
+  }
+  return null
+}
+
+function AppointmentList({ items, onStatus }: { items: AdminAppointment[]; onStatus: (id: number, s: Status) => void }) {
+  if (items.length === 0) return <Empty />
+  return (
+    <ul className="flex flex-col gap-3">
+      {items.map((apt) => (
+        <li key={apt.id} className="flex flex-col gap-3 rounded-2xl bg-surface p-4 shadow-sm">
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <p className="truncate text-sm font-semibold">{apt.client}</p>
+              <p className="truncate text-xs text-text-secondary">
+                {apt.service} · {apt.vehicle}
+              </p>
+            </div>
+            <StatusPill status={apt.status} />
+          </div>
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <span className="flex items-center gap-1.5 text-xs text-text-secondary">
+              <Clock className="h-3.5 w-3.5 text-lilac" />
+              {shortDate(apt.date)} · {apt.time}
+              <span className="ml-1 font-semibold text-text">{money(apt.total)}</span>
+            </span>
+            <div className="flex items-center gap-2">
+              <a
+                href={waLink(apt.phone)}
+                target="_blank"
+                rel="noreferrer"
+                className="flex h-8 w-8 items-center justify-center rounded-full bg-surface-2 text-text-secondary transition hover:text-text"
+                aria-label={`WhatsApp de ${apt.client}`}
+              >
+                <MessageCircle className="h-4 w-4" />
+              </a>
+              <Actions apt={apt} onStatus={onStatus} />
+            </div>
+          </div>
+        </li>
+      ))}
+    </ul>
+  )
+}
+
+function Empty() {
+  return (
+    <div className="flex flex-col items-center gap-2 rounded-2xl bg-surface p-10 text-center shadow-sm">
+      <Inbox className="h-6 w-6 text-text-tertiary" />
+      <p className="text-sm text-text-secondary">Nenhum agendamento encontrado.</p>
     </div>
   )
 }
