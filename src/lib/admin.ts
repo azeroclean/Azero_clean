@@ -1,6 +1,7 @@
 import type { Session } from '@supabase/supabase-js'
 import type { Appointment } from '../types/database'
 import { VEHICLE_TYPES } from '../data/vehicles'
+import { formatDuration } from '../data/services'
 
 export type AppointmentStatus = Appointment['status']
 
@@ -128,4 +129,144 @@ export async function updateAppointmentStatus(id: string, status: AppointmentSta
   if (!data || data.length === 0) {
     throw new Error('Sem permissão para alterar. Rode supabase/admin-policies.sql no Supabase.')
   }
+}
+
+// ------------------------------------------------------------
+// Serviços
+// ------------------------------------------------------------
+
+export interface AdminService {
+  id: string
+  title: string
+  description: string
+  category: string
+  durationMinutes: number | null
+  price: number
+  priceMoto: number | null
+  priceCarro: number | null
+  priceCaminhonete: number | null
+  imageUrl: string
+  benefits: string[]
+  active: boolean
+}
+
+export type ServiceInput = Omit<AdminService, 'id'>
+
+interface AdminServiceRow {
+  id: string
+  title: string
+  description: string | null
+  category: string | null
+  duration_minutes: number | null
+  price: number | string | null
+  price_moto: number | string | null
+  price_carro: number | string | null
+  price_caminhonete: number | string | null
+  image_url: string | null
+  benefits: string[] | null
+  active: boolean
+}
+
+const numOrNull = (value: number | string | null) =>
+  value === null || value === '' ? null : Number(value)
+
+export async function fetchAdminServices(): Promise<AdminService[]> {
+  const supabase = await getClient()
+  const { data, error } = await supabase
+    .from('services')
+    .select(
+      'id, title, description, category, duration_minutes, price, price_moto, price_carro, price_caminhonete, image_url, benefits, active'
+    )
+    .order('created_at', { ascending: true })
+
+  if (error) throw new Error(error.message)
+
+  return (data as AdminServiceRow[]).map((row) => ({
+    id: row.id,
+    title: row.title,
+    description: row.description ?? '',
+    category: row.category ?? '',
+    durationMinutes: row.duration_minutes,
+    price: Number(row.price ?? 0),
+    priceMoto: numOrNull(row.price_moto),
+    priceCarro: numOrNull(row.price_carro),
+    priceCaminhonete: numOrNull(row.price_caminhonete),
+    imageUrl: row.image_url ?? '',
+    benefits: row.benefits ?? [],
+    active: row.active,
+  }))
+}
+
+export async function saveService(input: ServiceInput, id?: string): Promise<void> {
+  const supabase = await getClient()
+  const row = {
+    title: input.title.trim(),
+    description: input.description.trim(),
+    category: input.category.trim(),
+    duration_minutes: input.durationMinutes,
+    duration: input.durationMinutes ? formatDuration(input.durationMinutes) : '',
+    price: input.price,
+    // o rótulo é recalculado a partir do preço
+    price_label: null,
+    price_moto: input.priceMoto,
+    price_carro: input.priceCarro,
+    price_caminhonete: input.priceCaminhonete,
+    image_url: input.imageUrl.trim(),
+    benefits: input.benefits,
+    active: input.active,
+  }
+
+  const query = id
+    ? supabase.from('services').update(row).eq('id', id).select('id')
+    : supabase.from('services').insert(row).select('id')
+  const { data, error } = await query
+
+  if (error) throw new Error(error.message)
+  if (!data || data.length === 0) {
+    throw new Error('Sem permissão para salvar. Rode supabase/agenda-servicos.sql no Supabase.')
+  }
+}
+
+// ------------------------------------------------------------
+// Horários disponíveis
+// ------------------------------------------------------------
+
+export interface TimeSlot {
+  id: string
+  weekday: number
+  time: string
+}
+
+export async function fetchAdminTimeSlots(): Promise<TimeSlot[]> {
+  const supabase = await getClient()
+  const { data, error } = await supabase
+    .from('time_slots')
+    .select('id, weekday, time')
+    .order('weekday')
+    .order('time')
+
+  if (error) {
+    throw new Error(
+      error.code === '42P01' || error.message.includes('time_slots')
+        ? 'A tabela de horários ainda não existe. Rode supabase/agenda-servicos.sql no Supabase.'
+        : error.message
+    )
+  }
+  return data as TimeSlot[]
+}
+
+export async function addTimeSlots(slots: { weekday: number; time: string }[]): Promise<void> {
+  if (slots.length === 0) return
+  const supabase = await getClient()
+  const { error } = await supabase
+    .from('time_slots')
+    .upsert(slots, { onConflict: 'weekday,time', ignoreDuplicates: true })
+  if (error) throw new Error(error.message)
+}
+
+export async function removeTimeSlot(id: string): Promise<void> {
+  const supabase = await getClient()
+  const { data, error } = await supabase.from('time_slots').delete().eq('id', id).select('id')
+  if (error) throw new Error(error.message)
+  if (!data || data.length === 0) throw new Error('Sem permissão para remover este horário.')
 }

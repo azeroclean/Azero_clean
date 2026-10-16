@@ -18,6 +18,8 @@ import {
   LogOut,
   AlertTriangle,
   RefreshCw,
+  Package,
+  CalendarClock,
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import { format } from 'date-fns'
@@ -31,18 +33,25 @@ import {
   adminButton,
 } from '../components/AdminScreen'
 import { useAdminAuth } from '../hooks/useAdminAuth'
+import { ServicesManager } from './admin/ServicesManager'
+import { TimeSlotsManager } from './admin/TimeSlotsManager'
 import { fetchAdminAppointments, signOut, updateAppointmentStatus } from '../lib/admin'
 import type { AdminAppointment, AppointmentStatus as Status } from '../lib/admin'
 
-type Tab = 'dashboard' | 'agendamentos' | 'clientes' | 'veiculos'
+type Tab = 'dashboard' | 'agendamentos' | 'servicos' | 'horarios' | 'clientes' | 'veiculos'
 type StatusHandler = (id: string, s: Status) => void
 
-const NAV: { id: Tab; label: string; icon: LucideIcon }[] = [
-  { id: 'dashboard', label: 'Início', icon: LayoutDashboard },
-  { id: 'agendamentos', label: 'Agendamentos', icon: Calendar },
-  { id: 'clientes', label: 'Clientes', icon: Users },
-  { id: 'veiculos', label: 'Veículos', icon: Car },
+const NAV: { id: Tab; label: string; short: string; icon: LucideIcon }[] = [
+  { id: 'dashboard', label: 'Início', short: 'Início', icon: LayoutDashboard },
+  { id: 'agendamentos', label: 'Agendamentos', short: 'Agenda', icon: Calendar },
+  { id: 'servicos', label: 'Serviços', short: 'Serviços', icon: Package },
+  { id: 'horarios', label: 'Horários disponíveis', short: 'Horários', icon: CalendarClock },
+  { id: 'clientes', label: 'Clientes', short: 'Clientes', icon: Users },
+  { id: 'veiculos', label: 'Veículos', short: 'Veículos', icon: Car },
 ]
+
+// Abas que mostram os agendamentos (as outras carregam os próprios dados)
+const APPOINTMENT_TABS: Tab[] = ['dashboard', 'agendamentos', 'clientes', 'veiculos']
 
 const STATUS_STYLE: Record<Status, { label: string; className: string }> = {
   pendente: { label: 'Pendente', className: 'bg-amber-50 text-amber-700 ring-amber-200' },
@@ -196,7 +205,8 @@ function AdminPanel({ email }: { email: string }) {
     return [...map.values()].sort((a, b) => a.name.localeCompare(b.name))
   }, [appointments])
 
-  const ready = !loadError && !(loading && appointments.length === 0)
+  const showAppointments = APPOINTMENT_TABS.includes(tab)
+  const ready = showAppointments && !loadError && !(loading && appointments.length === 0)
   const pendingCount = appointments.filter((a) => a.status === 'pendente').length
   const current = NAV.find((n) => n.id === tab)!
 
@@ -264,16 +274,18 @@ function AdminPanel({ email }: { email: string }) {
               </div>
             </div>
             <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={load}
-                disabled={loading}
-                className="flex h-9 w-9 items-center justify-center rounded-full bg-surface-2 text-text-secondary transition hover:text-text disabled:opacity-60"
-                aria-label="Atualizar agendamentos"
-                title="Atualizar"
-              >
-                <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
-              </button>
+              {APPOINTMENT_TABS.includes(tab) && (
+                <button
+                  type="button"
+                  onClick={load}
+                  disabled={loading}
+                  className="flex h-9 w-9 items-center justify-center rounded-full bg-surface-2 text-text-secondary transition hover:text-text disabled:opacity-60"
+                  aria-label="Atualizar agendamentos"
+                  title="Atualizar"
+                >
+                  <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
+                </button>
+              )}
               <Link
                 to="/"
                 className="flex h-9 w-9 items-center justify-center rounded-full bg-surface-2 text-text-secondary transition hover:text-text lg:hidden"
@@ -313,9 +325,9 @@ function AdminPanel({ email }: { email: string }) {
             </div>
           )}
 
-          {loading && appointments.length === 0 && <AdminSpinner label="Carregando agendamentos..." />}
+          {showAppointments && loading && appointments.length === 0 && <AdminSpinner label="Carregando agendamentos..." />}
 
-          {loadError && (
+          {showAppointments && loadError && (
             <div className="mx-auto max-w-md py-6">
               <AdminNotice
                 icon={AlertTriangle}
@@ -459,6 +471,10 @@ function AdminPanel({ email }: { email: string }) {
             </div>
           )}
 
+          {tab === 'servicos' && <ServicesManager />}
+
+          {tab === 'horarios' && <TimeSlotsManager />}
+
           {ready && tab === 'clientes' && clients.length === 0 && <Empty message="Nenhum cliente ainda." />}
 
           {ready && tab === 'clientes' && clients.length > 0 && (
@@ -514,7 +530,7 @@ function AdminPanel({ email }: { email: string }) {
 
       {/* Barra de abas — celular */}
       <nav className="fixed inset-x-0 bottom-0 z-30 border-t border-border bg-surface pb-[env(safe-area-inset-bottom)] lg:hidden">
-        <div className="mx-auto grid max-w-md grid-cols-4">
+        <div className="mx-auto grid max-w-lg grid-cols-6">
           {NAV.map((item) => {
             const active = tab === item.id
             return (
@@ -534,7 +550,7 @@ function AdminPanel({ email }: { email: string }) {
                 >
                   <item.icon className="h-5 w-5" />
                 </span>
-                {item.label}
+                {item.short}
                 {item.id === 'agendamentos' && pendingCount > 0 && (
                   <span className="absolute right-[22%] top-1.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-primary px-1 text-[9px] font-bold text-white">
                     {pendingCount}

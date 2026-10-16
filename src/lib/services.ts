@@ -1,4 +1,4 @@
-import { services as fallbackServices, formatPrice } from '../data/services'
+import { services as fallbackServices, formatDuration, formatPrice } from '../data/services'
 import type { Service } from '../data/services'
 import type { VehicleType } from '../data/vehicles'
 
@@ -19,11 +19,12 @@ export interface NewAppointment {
   total: number
 }
 
-interface ServiceRow {
+export interface ServiceRow {
   id: string
   title: string
   description: string | null
   duration: string | null
+  duration_minutes?: number | null
   price: number | string | null
   price_label: string | null
   price_moto: number | string | null
@@ -48,13 +49,15 @@ const toNumber = (value: number | string | null | undefined): number | undefined
   return Number.isNaN(parsed) ? undefined : parsed
 }
 
-function mapRow(row: ServiceRow): Service {
+export function mapRow(row: ServiceRow): Service {
   const price = Number(row.price ?? 0)
+  const minutes = row.duration_minutes ?? undefined
   return {
     id: row.id,
     title: row.title,
     description: row.description ?? '',
-    duration: row.duration ?? '',
+    duration: row.duration || (minutes ? formatDuration(minutes) : ''),
+    durationMinutes: minutes,
     price,
     priceLabel: row.price_label ?? formatPrice(price),
     category: row.category ?? '',
@@ -108,22 +111,49 @@ export async function fetchServiceById(id: string): Promise<Service | null> {
   }
 }
 
-export async function fetchBookedSlots(date: string): Promise<string[]> {
+export interface Booking {
+  time: string
+  service_ids: string[]
+}
+
+// Horários do dia já reservados (com os serviços, para calcular a duração).
+export async function fetchBookings(date: string): Promise<Booking[]> {
   if (!isConfigured()) return []
 
   try {
     const supabase = await getClient()
     const { data, error } = await supabase
       .from('appointments')
-      .select('time')
+      .select('time, service_ids')
       .eq('date', date)
       .neq('status', 'cancelado')
 
     if (error || !data) return []
 
-    return [...new Set((data as { time: string }[]).map((row) => row.time))]
+    return (data as Booking[]).map((row) => ({ time: row.time, service_ids: row.service_ids ?? [] }))
   } catch {
     return []
+  }
+}
+
+// Horários configurados pelo admin, por dia da semana (0 = domingo).
+// null = usar os horários padrão do site (sem Supabase ou tabela ainda não criada/vazia).
+export async function fetchTimeSlots(): Promise<Record<number, string[]> | null> {
+  if (!isConfigured()) return null
+
+  try {
+    const supabase = await getClient()
+    const { data, error } = await supabase.from('time_slots').select('weekday, time').order('time')
+
+    if (error || !data || data.length === 0) return null
+
+    const byDay: Record<number, string[]> = {}
+    for (const row of data as { weekday: number; time: string }[]) {
+      ;(byDay[row.weekday] ??= []).push(row.time)
+    }
+    return byDay
+  } catch {
+    return null
   }
 }
 
