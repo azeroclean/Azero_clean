@@ -1,7 +1,13 @@
-import { useState } from 'react'
-import { Bell, BellOff, BellRing, Check, Loader2, Pencil, X } from 'lucide-react'
+import { useEffect, useState } from 'react'
+import { Bell, BellOff, BellRing, Check, Loader2, Pencil, Volume2, VolumeX, X } from 'lucide-react'
 import type { AdminAppointment } from '../../lib/admin'
-import { notificationsSupported, whenLabel as when } from '../../lib/notify'
+import {
+  isAudioUnlocked,
+  notificationsSupported,
+  playChime,
+  unlockAudio,
+  whenLabel as when,
+} from '../../lib/notify'
 
 export function NotificationToggle() {
   const [permission, setPermission] = useState(() =>
@@ -38,6 +44,42 @@ export function NotificationToggle() {
       <span className="hidden sm:inline">
         {permission === 'granted' ? 'Avisos ativos' : permission === 'denied' ? 'Avisos bloqueados' : 'Ativar avisos'}
       </span>
+    </button>
+  )
+}
+
+// Destrava o som no primeiro clique/toque e permite testar.
+export function SoundButton() {
+  const [on, setOn] = useState(isAudioUnlocked)
+
+  useEffect(() => {
+    if (on) return
+    const unlock = () => {
+      unlockAudio().then((ok) => ok && setOn(true))
+    }
+    const events = ['pointerdown', 'keydown', 'touchstart'] as const
+    events.forEach((e) => window.addEventListener(e, unlock, { passive: true }))
+    return () => events.forEach((e) => window.removeEventListener(e, unlock))
+  }, [on])
+
+  const label = on ? 'Som de aviso ligado — clique para testar' : 'Clique para ligar o som de aviso'
+
+  return (
+    <button
+      type="button"
+      onClick={async () => {
+        const ok = await unlockAudio()
+        setOn(ok)
+        if (ok) await playChime()
+      }}
+      title={label}
+      aria-label={label}
+      className={`flex h-9 items-center gap-1.5 rounded-full px-3 text-xs font-semibold transition ${
+        on ? 'bg-primary/10 text-primary-600 hover:bg-primary/20' : 'bg-amber-50 text-amber-700 hover:bg-amber-100'
+      }`}
+    >
+      {on ? <Volume2 className="h-4 w-4" /> : <VolumeX className="h-4 w-4" />}
+      <span className="hidden sm:inline">{on ? 'Testar som' : 'Ligar som'}</span>
     </button>
   )
 }

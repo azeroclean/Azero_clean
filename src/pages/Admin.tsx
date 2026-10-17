@@ -38,7 +38,7 @@ import { ServicesManager } from './admin/ServicesManager'
 import { TimeSlotsManager } from './admin/TimeSlotsManager'
 import { AppointmentEditor } from './admin/AppointmentEditor'
 import type { EditorResult } from './admin/AppointmentEditor'
-import { BookingAlerts, LiveBadge, NotificationToggle } from './admin/BookingAlerts'
+import { BookingAlerts, LiveBadge, NotificationToggle, SoundButton } from './admin/BookingAlerts'
 import { playChime, showSystemNotification } from '../lib/notify'
 import { fetchAdminAppointments, signOut, subscribeAppointments, updateAppointmentStatus } from '../lib/admin'
 import type { AdminAppointment, AppointmentStatus as Status } from '../lib/admin'
@@ -143,7 +143,7 @@ function AdminPanel({ email }: { email: string }) {
       const fresh = data.filter((a) => !known.has(a.id) && a.status === 'pendente')
       if (fresh.length > 0) {
         setAlertIds((prev) => [...fresh.map((a) => a.id).reverse(), ...prev])
-        playChime()
+        void playChime()
         fresh.forEach(showSystemNotification)
       }
     }
@@ -376,6 +376,7 @@ function AdminPanel({ email }: { email: string }) {
               <span className="hidden sm:flex">
                 <LiveBadge live={live} />
               </span>
+              <SoundButton />
               <NotificationToggle />
               {APPOINTMENT_TABS.includes(tab) && (
                 <button

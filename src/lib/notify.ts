@@ -9,29 +9,72 @@ export const whenLabel = (apt: AdminAppointment) => {
 
 export const notificationsSupported = () => typeof window !== 'undefined' && 'Notification' in window
 
-// "Plim" curto gerado no navegador (sem arquivo de áudio).
-export function playChime() {
+// Som de aviso gerado no navegador (sem arquivo de áudio).
+// O navegador só libera som depois de um clique/toque na página, então usamos
+// um único AudioContext, destravado na primeira interação (unlockAudio).
+let audioCtx: AudioContext | null = null
+
+function getAudioContext(): AudioContext | null {
+  if (audioCtx) return audioCtx
+  const AudioCtx =
+    window.AudioContext ??
+    (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext
+  if (!AudioCtx) return null
+  audioCtx = new AudioCtx()
+  return audioCtx
+}
+
+export function isAudioUnlocked() {
+  return audioCtx?.state === 'running'
+}
+
+// Chamar dentro de um clique/toque: libera o áudio para os avisos seguintes.
+export async function unlockAudio(): Promise<boolean> {
+  const ctx = getAudioContext()
+  if (!ctx) return false
   try {
-    const AudioCtx =
-      window.AudioContext ?? (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext
-    if (!AudioCtx) return
-    const ctx = new AudioCtx()
-    ;[880, 1320].forEach((freq, i) => {
-      const osc = ctx.createOscillator()
-      const gain = ctx.createGain()
-      osc.type = 'sine'
-      osc.frequency.value = freq
-      const start = ctx.currentTime + i * 0.18
-      gain.gain.setValueAtTime(0.0001, start)
-      gain.gain.exponentialRampToValueAtTime(0.25, start + 0.02)
-      gain.gain.exponentialRampToValueAtTime(0.0001, start + 0.35)
-      osc.connect(gain).connect(ctx.destination)
-      osc.start(start)
-      osc.stop(start + 0.4)
+    if (ctx.state !== 'running') await ctx.resume()
+    // toca um silêncio curtinho: alguns navegadores (iPhone) exigem isso para destravar
+    const buffer = ctx.createBuffer(1, 1, 22050)
+    const source = ctx.createBufferSource()
+    source.buffer = buffer
+    source.connect(ctx.destination)
+    source.start(0)
+  } catch {
+    return false
+  }
+  return ctx.state === 'running'
+}
+
+function tone(ctx: AudioContext, freq: number, start: number) {
+  const osc = ctx.createOscillator()
+  const gain = ctx.createGain()
+  osc.type = 'triangle'
+  osc.frequency.value = freq
+  gain.gain.setValueAtTime(0.0001, start)
+  gain.gain.exponentialRampToValueAtTime(0.6, start + 0.02)
+  gain.gain.exponentialRampToValueAtTime(0.0001, start + 0.45)
+  osc.connect(gain).connect(ctx.destination)
+  osc.start(start)
+  osc.stop(start + 0.5)
+}
+
+// "Plim-plom" duas vezes
+export async function playChime(): Promise<boolean> {
+  const ctx = getAudioContext()
+  if (!ctx) return false
+  try {
+    if (ctx.state !== 'running') await ctx.resume()
+    if (ctx.state !== 'running') return false
+    const t = ctx.currentTime + 0.05
+    ;[0, 0.7].forEach((offset) => {
+      tone(ctx, 880, t + offset)
+      tone(ctx, 1320, t + offset + 0.18)
     })
-    setTimeout(() => ctx.close(), 1000)
+    return true
   } catch {
     // navegador sem áudio: segue só com o alerta visual
+    return false
   }
 }
 
