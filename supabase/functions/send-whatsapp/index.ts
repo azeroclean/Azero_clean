@@ -63,7 +63,11 @@ function formatTotal(value: number) {
   return total.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
 }
 
+// Todo resultado vai para Supabase > Edge Functions > send-whatsapp > Logs
 function json(body: unknown, status = 200) {
+  const line = `[send-whatsapp] ${status} ${JSON.stringify(body)}`
+  if (status >= 400) console.error(line)
+  else console.log(line)
   return new Response(JSON.stringify(body), {
     status,
     headers: { 'Content-Type': 'application/json' },
@@ -158,6 +162,7 @@ Deno.serve(async (req) => {
     }
 
     const to = event === 'novo' ? OWNER_WHATSAPP : data.client_phone
+    console.log(`[send-whatsapp] enviando "${event}" para ...${toWhatsappNumber(to).slice(-4)}`)
     await sendText(to, buildMessage(event, data, servicesText))
 
     return json({ ok: true, event })
