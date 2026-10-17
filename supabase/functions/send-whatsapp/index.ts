@@ -1,6 +1,6 @@
 // Edge Function: envia mensagens de WhatsApp pelo Z-API.
 //
-//   evento "novo"        -> avisa o dono que chegou um agendamento (status pendente)
+//   evento "novo"        -> cliente recebe "recebemos seu agendamento" e o dono recebe o aviso
 //   evento "confirmado"  -> avisa o cliente que o agendamento foi confirmado
 //
 // Deploy: supabase functions deploy send-whatsapp --project-ref <ref>
@@ -93,13 +93,29 @@ async function sendText(phone: string, message: string) {
   }
 }
 
-function buildMessage(event: Event, data: AppointmentRow, servicesText: string) {
+type Audience = 'dono' | 'cliente'
+
+function buildMessage(event: Event, audience: Audience, data: AppointmentRow, servicesText: string) {
   const details =
     `📅 Data: ${formatDate(data.date)}\n` +
     `🕐 Horário: ${data.time}\n` +
     `🚗 Serviços: ${servicesText}\n` +
     (data.vehicle_type ? `🚙 Veículo: ${VEHICLE_LABELS[data.vehicle_type] ?? data.vehicle_type}\n` : '') +
     `💰 Valor previsto: ${formatTotal(data.total)}`
+
+  if (event === 'novo' && audience === 'cliente') {
+    return (
+      `Olá, ${data.client_name}! 👋
+` +
+      `Recebemos seu agendamento na *${BUSINESS_NAME}*.
+
+` +
+      `${details}
+
+` +
+      `⏳ Agora é só aguardar: você recebe outra mensagem aqui assim que confirmarmos.`
+    )
+  }
 
   if (event === 'novo') {
     return (
@@ -165,11 +181,33 @@ Deno.serve(async (req) => {
       }
     }
 
-    const to = event === 'novo' ? OWNER_WHATSAPP : data.client_phone
-    console.log(`[send-whatsapp] enviando "${event}" para ...${toWhatsappNumber(to).slice(-4)}`)
-    await sendText(to, buildMessage(event, data, servicesText))
+    // novo agendamento: cliente recebe "recebemos" e o dono recebe o aviso
+    // confirmado: só o cliente recebe a confirmação
+    const targets: { audience: Audience; phone: string }[] =
+      event === 'novo'
+        ? [
+            { audience: 'cliente', phone: data.client_phone },
+            { audience: 'dono', phone: OWNER_WHATSAPP },
+          ]
+        : [{ audience: 'cliente', phone: data.client_phone }]
 
-    return json({ ok: true, event })
+    const results = await Promise.allSettled(
+      targets.map(({ audience, phone }) => {
+        console.log(`[send-whatsapp] enviando "${event}" para ${audience} ...${toWhatsappNumber(phone).slice(-4)}`)
+        return sendText(phone, buildMessage(event, audience, data, servicesText))
+      })
+    )
+    const sent = Object.fromEntries(
+      targets.map(({ audience }, i) => {
+        const r = results[i]
+        return [audience, r.status === 'fulfilled' ? 'ok' : String(r.reason)]
+      })
+    )
+    if (results.every((r) => r.status === 'rejected')) {
+      return json({ error: 'falha ao enviar', sent }, 502)
+    }
+
+    return json({ ok: true, event, sent })
   } catch (err) {
     return json({ error: 'falha ao enviar', detail: String(err) }, 502)
   }

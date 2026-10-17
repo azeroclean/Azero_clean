@@ -6,7 +6,8 @@ O que acontece depois de configurado:
 
 | Quando | Quem recebe | Mensagem |
 | --- | --- | --- |
-| Cliente agenda pelo site | Dono (88 99498-7680) | "🔔 Novo agendamento no site" com nome, WhatsApp, data, serviços e valor |
+| Cliente agenda pelo site | Cliente | "Recebemos seu agendamento" com os detalhes, aguardando confirmação |
+| Cliente agenda pelo site | Dono (secret `OWNER_WHATSAPP`) | "🔔 Novo agendamento no site" com nome, WhatsApp, data, serviços e valor |
 | Admin muda o status para **confirmado** | Cliente | "Seu agendamento na Azero Clean foi confirmado" com os detalhes |
 
 ## 1. Pegar as chaves no Z-API
