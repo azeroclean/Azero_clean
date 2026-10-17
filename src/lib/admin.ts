@@ -137,6 +137,36 @@ export async function updateAppointmentStatus(id: string, status: AppointmentSta
   }
 }
 
+export interface AppointmentChange {
+  type: 'INSERT' | 'UPDATE' | 'DELETE'
+  id: string
+  status?: AppointmentStatus
+}
+
+// Recebe na hora cada agendamento novo/alterado (Supabase Realtime).
+// `onLive` diz se a conexão em tempo real está ativa; sem ela o painel atualiza sozinho de tempos em tempos.
+export async function subscribeAppointments(
+  onChange: (change: AppointmentChange) => void,
+  onLive: (live: boolean) => void
+): Promise<() => void> {
+  const supabase = await getClient()
+  const channel = supabase
+    .channel('admin-appointments')
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'appointments' }, (payload) => {
+      const row = (payload.eventType === 'DELETE' ? payload.old : payload.new) as {
+        id?: string
+        status?: AppointmentStatus
+      }
+      if (!row?.id) return
+      onChange({ type: payload.eventType, id: row.id, status: row.status })
+    })
+    .subscribe((status) => onLive(status === 'SUBSCRIBED'))
+
+  return () => {
+    supabase.removeChannel(channel)
+  }
+}
+
 // Agendamentos do dia (exceto um), para calcular os horários livres ao remarcar.
 export async function fetchDayBookings(
   date: string,

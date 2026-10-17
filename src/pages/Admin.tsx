@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, Navigate } from 'react-router-dom'
 import {
   LayoutDashboard,
@@ -38,7 +38,9 @@ import { ServicesManager } from './admin/ServicesManager'
 import { TimeSlotsManager } from './admin/TimeSlotsManager'
 import { AppointmentEditor } from './admin/AppointmentEditor'
 import type { EditorResult } from './admin/AppointmentEditor'
-import { fetchAdminAppointments, signOut, updateAppointmentStatus } from '../lib/admin'
+import { BookingAlerts, LiveBadge, NotificationToggle } from './admin/BookingAlerts'
+import { playChime, showSystemNotification } from '../lib/notify'
+import { fetchAdminAppointments, signOut, subscribeAppointments, updateAppointmentStatus } from '../lib/admin'
 import type { AdminAppointment, AppointmentStatus as Status } from '../lib/admin'
 
 type Tab = 'dashboard' | 'agendamentos' | 'servicos' | 'horarios' | 'clientes' | 'veiculos'
@@ -129,29 +131,93 @@ function AdminPanel({ email }: { email: string }) {
     )
   }
 
+
+  // Novos pedidos: tudo que chegar depois da primeira carga e estiver pendente vira alerta.
+  const knownIds = useRef<Set<string> | null>(null)
+  const [alertIds, setAlertIds] = useState<string[]>([])
+  const [live, setLive] = useState(false)
+
+  const receive = useCallback((data: AdminAppointment[]) => {
+    const known = knownIds.current
+    if (known) {
+      const fresh = data.filter((a) => !known.has(a.id) && a.status === 'pendente')
+      if (fresh.length > 0) {
+        setAlertIds((prev) => [...fresh.map((a) => a.id).reverse(), ...prev])
+        playChime()
+        fresh.forEach(showSystemNotification)
+      }
+    }
+    knownIds.current = new Set(data.map((a) => a.id))
+    setAppointments(data)
+  }, [])
+
   const load = useCallback(async () => {
     setLoading(true)
     setLoadError(null)
     try {
-      setAppointments(await fetchAdminAppointments())
+      receive(await fetchAdminAppointments())
     } catch (error) {
       setLoadError((error as Error).message)
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [receive])
+
+  // Atualização silenciosa (sem spinner), usada pelo tempo real e pela checagem periódica.
+  const refresh = useCallback(() => {
+    fetchAdminAppointments()
+      .then(receive)
+      .catch(() => {
+        // mantém a lista atual; a próxima atualização tenta de novo
+      })
+  }, [receive])
+
+  useEffect(() => {
+    let unsubscribe: (() => void) | undefined
+    let timer: ReturnType<typeof setTimeout> | undefined
+    let cancelled = false
+    subscribeAppointments(
+      () => {
+        // agrupa várias mudanças seguidas numa única recarga
+        clearTimeout(timer)
+        timer = setTimeout(refresh, 400)
+      },
+      (isLive) => !cancelled && setLive(isLive)
+    )
+      .then((stop) => {
+        if (cancelled) stop()
+        else unsubscribe = stop
+      })
+      .catch(() => !cancelled && setLive(false))
+    return () => {
+      cancelled = true
+      clearTimeout(timer)
+      unsubscribe?.()
+    }
+  }, [refresh])
+
+  // Reserva: se o tempo real cair, confere a cada 30 s (e sempre ao voltar para a aba).
+  useEffect(() => {
+    const interval = live ? undefined : setInterval(refresh, 30_000)
+    const onVisible = () => document.visibilityState === 'visible' && refresh()
+    document.addEventListener('visibilitychange', onVisible)
+    return () => {
+      clearInterval(interval)
+      document.removeEventListener('visibilitychange', onVisible)
+    }
+  }, [live, refresh])
 
   // Primeira carga: o estado inicial já é "carregando", então só grava o resultado.
   useEffect(() => {
     let cancelled = false
     fetchAdminAppointments()
-      .then((data) => !cancelled && setAppointments(data))
+      .then((data) => !cancelled && receive(data))
       .catch((error: Error) => !cancelled && setLoadError(error.message))
       .finally(() => !cancelled && setLoading(false))
     return () => {
       cancelled = true
     }
-  }, [])
+  }, [receive])
 
   const setStatus: StatusHandler = async (id, status) => {
     setBusyId(id)
@@ -229,6 +295,18 @@ function AdminPanel({ email }: { email: string }) {
   const showAppointments = APPOINTMENT_TABS.includes(tab)
   const ready = showAppointments && !loadError && !(loading && appointments.length === 0)
   const pendingCount = appointments.filter((a) => a.status === 'pendente').length
+  // some sozinho quando o pedido é confirmado/cancelado (aqui ou em outro aparelho)
+  const alerts = alertIds
+    .map((id) => appointments.find((a) => a.id === id))
+    .filter((a): a is AdminAppointment => a?.status === 'pendente')
+
+  useEffect(() => {
+    const base = 'Admin · Azero Clean'
+    document.title = pendingCount > 0 ? `(${pendingCount}) Confirmar · ${base}` : base
+    return () => {
+      document.title = 'Azero Clean'
+    }
+  }, [pendingCount])
   const current = NAV.find((n) => n.id === tab)!
 
   return (
@@ -295,6 +373,10 @@ function AdminPanel({ email }: { email: string }) {
               </div>
             </div>
             <div className="flex items-center gap-2">
+              <span className="hidden sm:flex">
+                <LiveBadge live={live} />
+              </span>
+              <NotificationToggle />
               {APPOINTMENT_TABS.includes(tab) && (
                 <button
                   type="button"
@@ -328,6 +410,18 @@ function AdminPanel({ email }: { email: string }) {
         </header>
 
         <main className="mx-auto w-full max-w-6xl flex-1 px-4 pb-28 pt-4 lg:px-8 lg:pb-10 lg:pt-6">
+          <BookingAlerts
+            alerts={alerts}
+            pendingCount={tab === 'agendamentos' && filter === 'pendente' ? alerts.length : pendingCount}
+            busyId={busyId}
+            onConfirm={(apt) => setStatus(apt.id, 'confirmado')}
+            onEdit={setEditing}
+            onDismiss={(id) => setAlertIds((prev) => prev.filter((x) => x !== id))}
+            onShowPending={() => {
+              setFilter('pendente')
+              setTab('agendamentos')
+            }}
+          />
           {actionError && (
             <div
               className="mb-4 flex items-start gap-3 rounded-2xl bg-red-50 p-4 text-sm text-red-700 ring-1 ring-red-200"
