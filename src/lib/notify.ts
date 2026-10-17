@@ -1,6 +1,7 @@
 import { format } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
 import type { AdminAppointment } from './admin'
+import { isPushActive } from './push'
 
 export const whenLabel = (apt: AdminAppointment) => {
   const day = format(new Date(`${apt.date}T00:00:00`), "EEE, d 'de' MMM", { locale: ptBR })
@@ -80,6 +81,8 @@ export async function playChime(): Promise<boolean> {
 
 // Notificação do sistema (aparece mesmo com o painel em outra aba).
 export function showSystemNotification(apt: AdminAppointment) {
+  // com push ativo, o aviso já chega pelo service worker
+  if (isPushActive()) return
   if (!notificationsSupported() || Notification.permission !== 'granted') return
   try {
     const n = new Notification('🔔 Novo agendamento para confirmar', {

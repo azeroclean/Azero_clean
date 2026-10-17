@@ -3,48 +3,103 @@ import { Bell, BellOff, BellRing, Check, Loader2, Pencil, Volume2, VolumeX, X } 
 import type { AdminAppointment } from '../../lib/admin'
 import {
   isAudioUnlocked,
-  notificationsSupported,
   playChime,
   unlockAudio,
   whenLabel as when,
 } from '../../lib/notify'
+import { enablePush, getPushStatus, sendTestPush } from '../../lib/push'
+import type { PushStatus } from '../../lib/push'
 
+const PUSH_LABEL: Record<PushStatus, string> = {
+  unsupported: 'Este navegador não suporta notificações',
+  'ios-install': 'No iPhone: Compartilhar → Adicionar à Tela de Início, abra o app e ative aqui',
+  denied: 'Notificações bloqueadas: libere nas configurações do navegador para este site',
+  off: 'Ativar notificações (chegam mesmo com o site fechado)',
+  on: 'Notificações ativas — clique para enviar um teste',
+}
+
+// Notificações push: chegam na barra de tarefas/celular mesmo com o painel fechado.
 export function NotificationToggle() {
-  const [permission, setPermission] = useState(() =>
-    notificationsSupported() ? Notification.permission : 'denied'
-  )
-  if (!notificationsSupported()) return null
+  const [status, setStatus] = useState<PushStatus | null>(null)
+  const [busy, setBusy] = useState(false)
+  const [message, setMessage] = useState<{ text: string; tone: 'ok' | 'error' } | null>(null)
 
-  const Icon = permission === 'granted' ? BellRing : permission === 'denied' ? BellOff : Bell
-  const label =
-    permission === 'granted'
-      ? 'Notificações ativadas'
-      : permission === 'denied'
-      ? 'Notificações bloqueadas no navegador'
-      : 'Ativar notificações de novos agendamentos'
+  useEffect(() => {
+    let active = true
+    getPushStatus()
+      .then((s) => active && setStatus(s))
+      .catch(() => active && setStatus('unsupported'))
+    return () => {
+      active = false
+    }
+  }, [])
+
+  useEffect(() => {
+    if (!message) return
+    const timer = setTimeout(() => setMessage(null), 8000)
+    return () => clearTimeout(timer)
+  }, [message])
+
+  if (status === null) return null
+
+  const handleClick = async () => {
+    if (status === 'unsupported' || status === 'denied' || status === 'ios-install') {
+      setMessage({ text: PUSH_LABEL[status], tone: 'error' })
+      return
+    }
+    setBusy(true)
+    try {
+      if (status === 'off') {
+        await enablePush()
+        setStatus('on')
+        await sendTestPush().catch(() => undefined)
+        setMessage({ text: 'Notificações ativadas! Enviamos um teste.', tone: 'ok' })
+      } else {
+        await sendTestPush()
+        setMessage({ text: 'Teste enviado. Deve aparecer em alguns segundos.', tone: 'ok' })
+      }
+    } catch (err) {
+      setMessage({ text: (err as Error).message, tone: 'error' })
+      setStatus(await getPushStatus().catch(() => 'off' as const))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const Icon = status === 'on' ? BellRing : status === 'off' ? Bell : BellOff
+  const short =
+    status === 'on' ? 'Notificações ativas' : status === 'off' ? 'Ativar notificações' : 'Notificações'
 
   return (
-    <button
-      type="button"
-      onClick={async () => {
-        if (permission !== 'default') return
-        setPermission(await Notification.requestPermission())
-      }}
-      title={label}
-      aria-label={label}
-      className={`flex h-9 items-center gap-1.5 rounded-full px-3 text-xs font-semibold transition ${
-        permission === 'granted'
-          ? 'bg-primary/10 text-primary-600'
-          : permission === 'denied'
-          ? 'bg-surface-2 text-text-tertiary'
-          : 'bg-amber-50 text-amber-700 hover:bg-amber-100'
-      }`}
-    >
-      <Icon className="h-4 w-4" />
-      <span className="hidden sm:inline">
-        {permission === 'granted' ? 'Avisos ativos' : permission === 'denied' ? 'Avisos bloqueados' : 'Ativar avisos'}
-      </span>
-    </button>
+    <div className="relative">
+      <button
+        type="button"
+        onClick={handleClick}
+        disabled={busy}
+        title={PUSH_LABEL[status]}
+        aria-label={PUSH_LABEL[status]}
+        className={`flex h-9 items-center gap-1.5 rounded-full px-3 text-xs font-semibold transition disabled:opacity-60 ${
+          status === 'on'
+            ? 'bg-primary/10 text-primary-600 hover:bg-primary/20'
+            : status === 'off'
+            ? 'bg-amber-50 text-amber-700 hover:bg-amber-100'
+            : 'bg-surface-2 text-text-tertiary'
+        }`}
+      >
+        {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Icon className="h-4 w-4" />}
+        <span className="hidden sm:inline">{short}</span>
+      </button>
+      {message && (
+        <p
+          role="status"
+          className={`absolute right-0 top-11 z-30 w-64 rounded-xl p-3 text-xs font-medium shadow-lg ${
+            message.tone === 'ok' ? 'bg-ink text-white' : 'bg-red-50 text-red-700 ring-1 ring-red-200'
+          }`}
+        >
+          {message.text}
+        </p>
+      )}
+    </div>
   )
 }
 
