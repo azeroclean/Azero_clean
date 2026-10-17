@@ -1,4 +1,6 @@
-// Edge Function: envia mensagens de WhatsApp pelo Z-API.
+// Edge Function: envia mensagens de WhatsApp pela Evolution API ou pelo Z-API.
+// O secret WHATSAPP_PROVIDER escolhe qual ("evolution" ou "zapi"; padrão: "zapi"),
+// então dá para publicar esta versão sem mudar nada e trocar só pelo secret.
 //
 // Chamadas pelo banco (supabase/whatsapp-trigger.sql):
 //   "novo"        -> cliente recebe "recebemos seu agendamento" e o dono recebe o aviso
@@ -11,6 +13,12 @@
 //
 // Deploy: supabase functions deploy send-whatsapp --project-ref <ref>
 // Secrets (Supabase > Edge Functions > Secrets, ou `supabase secrets set`):
+//   WHATSAPP_PROVIDER    "evolution" ou "zapi" (padrão: "zapi")
+//   -- Evolution API --
+//   EVOLUTION_URL        endereço da sua Evolution, ex: https://wa.seudominio.com
+//   EVOLUTION_API_KEY    AUTHENTICATION_API_KEY do .env (ou o hash da instância)
+//   EVOLUTION_INSTANCE   nome da instância, ex: azero-clean
+//   -- Z-API --
 //   ZAPI_INSTANCE_ID     ID da instância (painel Z-API)
 //   ZAPI_TOKEN           token da instância
 //   ZAPI_CLIENT_TOKEN    token de segurança da conta (Z-API > Segurança), se estiver ativo
@@ -19,7 +27,7 @@
 //                        no header x-webhook-secret (veja supabase/whatsapp-trigger.sql)
 // SUPABASE_URL e SUPABASE_SERVICE_ROLE_KEY são injetados automaticamente.
 //
-// Passo a passo completo: supabase/ZAPI-SETUP.md
+// Passo a passo: supabase/EVOLUTION-SETUP.md (Evolution) e supabase/ZAPI-SETUP.md (Z-API)
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
@@ -95,7 +103,40 @@ const CORS = {
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
 }
 
-async function sendText(phone: string, message: string) {
+type Provider = 'evolution' | 'zapi'
+
+function provider(): Provider {
+  return env('WHATSAPP_PROVIDER').toLowerCase() === 'evolution' ? 'evolution' : 'zapi'
+}
+
+const REQUIRED_SECRETS: Record<Provider, string[]> = {
+  evolution: ['EVOLUTION_URL', 'EVOLUTION_API_KEY', 'EVOLUTION_INSTANCE'],
+  zapi: ['ZAPI_INSTANCE_ID', 'ZAPI_TOKEN'],
+}
+
+function sendText(phone: string, message: string) {
+  return provider() === 'evolution' ? sendTextEvolution(phone, message) : sendTextZapi(phone, message)
+}
+
+async function sendTextEvolution(phone: string, message: string) {
+  const baseUrl = env('EVOLUTION_URL').replace(/\/+$/, '')
+  const response = await fetch(
+    `${baseUrl}/message/sendText/${encodeURIComponent(env('EVOLUTION_INSTANCE'))}`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', apikey: env('EVOLUTION_API_KEY') },
+      body: JSON.stringify({ number: toWhatsappNumber(phone), text: message }),
+      // se a VPS estiver fora do ar, falha rápido em vez de travar a função
+      signal: AbortSignal.timeout(15_000),
+    }
+  )
+  if (!response.ok) {
+    // 400 com "exists": false = número sem WhatsApp; 401 = apikey errada; 404 = instância não existe
+    throw new Error(`Evolution ${response.status}: ${await response.text()}`)
+  }
+}
+
+async function sendTextZapi(phone: string, message: string) {
   const clientToken = env('ZAPI_CLIENT_TOKEN')
   const response = await fetch(
     `https://api.z-api.io/instances/${env('ZAPI_INSTANCE_ID')}/token/${env('ZAPI_TOKEN')}/send-text`,
@@ -209,14 +250,10 @@ Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: CORS })
   if (req.method !== 'POST') return json({ error: 'method not allowed' }, 405)
 
-  const missing = [
-    ['ZAPI_INSTANCE_ID', env('ZAPI_INSTANCE_ID')],
-    ['ZAPI_TOKEN', env('ZAPI_TOKEN')],
-  ]
-    .filter(([, value]) => !value)
-    .map(([name]) => name)
+  const missing = REQUIRED_SECRETS[provider()].filter((name) => !env(name))
   if (missing.length > 0) {
-    return json({ error: 'Z-API não configurado', missing }, 500)
+    const label = provider() === 'evolution' ? 'Evolution API' : 'Z-API'
+    return json({ error: `${label} não configurado`, missing }, 500)
   }
 
   try {
@@ -287,7 +324,7 @@ Deno.serve(async (req) => {
       return json({ error: 'falha ao enviar', sent }, 502)
     }
 
-    return json({ ok: true, event, sent })
+    return json({ ok: true, event, provider: provider(), sent })
   } catch (err) {
     return json({ error: 'falha ao enviar', detail: String(err) }, 502)
   }

@@ -227,7 +227,7 @@ export type ClientNotice =
     }
   | { event: 'cancelado'; note?: string }
 
-// Manda WhatsApp para o cliente pela Edge Function (Z-API), com o login do admin.
+// Manda WhatsApp para o cliente pela Edge Function (Evolution API ou Z-API), com o login do admin.
 export async function notifyClient(id: string, notice: ClientNotice): Promise<void> {
   const supabase = await getClient()
   const { data, error } = await supabase.functions.invoke('send-whatsapp', {
@@ -244,7 +244,7 @@ export async function notifyClient(id: string, notice: ClientNotice): Promise<vo
     throw new Error(`Não foi possível enviar o WhatsApp (${detail}).`)
   }
   if (data?.sent?.cliente && data.sent.cliente !== 'ok') {
-    throw new Error('O Z-API recusou a mensagem. Veja os logs da função send-whatsapp.')
+    throw new Error('O WhatsApp recusou a mensagem. Veja os logs da função send-whatsapp.')
   }
 }
 
