@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react'
 import { AlertTriangle } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
+import { BUSINESS } from '../data/business'
 
 // Tela centralizada usada no login e nos estados de carregando/erro do painel.
 export function AdminScreen({ children }: { children: ReactNode }) {
@@ -14,9 +15,11 @@ export function AdminScreen({ children }: { children: ReactNode }) {
 export function AdminBrand() {
   return (
     <div className="mb-6 flex flex-col items-center gap-3 text-center">
-      <span className="flex h-12 w-12 items-center justify-center rounded-full bg-ink text-sm font-black text-white">
-        AC
-      </span>
+      <img
+        src={BUSINESS.logo}
+        alt={`Logo ${BUSINESS.name}`}
+        className="h-24 w-24 rounded-full bg-black object-cover shadow-md"
+      />
       <div>
         <p className="text-base font-bold">Azero Clean</p>
         <p className="text-xs text-text-tertiary">Painel administrativo</p>

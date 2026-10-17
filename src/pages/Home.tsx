@@ -55,9 +55,11 @@ export function Home() {
         <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_80%_10%,rgba(61,214,140,0.18),transparent_55%)]" />
         <div className="relative mx-auto flex max-w-md flex-col gap-6 px-5 pb-10 pt-12">
           <div className="flex items-center gap-4">
-            <div className="flex h-24 w-24 shrink-0 items-center justify-center rounded-full bg-white shadow-lg">
-              <span className="text-2xl font-black tracking-tight text-ink">AC</span>
-            </div>
+            <img
+              src={BUSINESS.logo}
+              alt={`Logo ${BUSINESS.name}`}
+              className="h-24 w-24 shrink-0 rounded-full bg-black object-cover shadow-lg ring-2 ring-white/20"
+            />
             <div className="flex min-w-0 flex-col gap-2">
               <h1 className="text-xl font-bold">{BUSINESS.name}</h1>
               <span className="flex items-center gap-1.5 text-sm text-white/80">
@@ -186,15 +188,17 @@ export function Home() {
 
         <section className="border-t border-border px-5 py-8">
           <div className="overflow-hidden rounded-2xl border border-primary/40">
-            <div className="flex h-24 items-center justify-center bg-ink">
+            <div className="flex h-24 items-center justify-center bg-black">
               <span className="text-2xl font-black uppercase tracking-[0.2em] text-white">
                 {BUSINESS.name}
               </span>
             </div>
             <div className="relative flex flex-col items-center gap-3 bg-gradient-to-b from-surface to-surface-2 px-6 pb-6 pt-12 text-center">
-              <div className="absolute -top-10 flex h-20 w-20 items-center justify-center rounded-full bg-white shadow-md">
-                <span className="text-xl font-black text-ink">AC</span>
-              </div>
+              <img
+                src={BUSINESS.logo}
+                alt=""
+                className="absolute -top-10 h-20 w-20 rounded-full bg-black object-cover shadow-md ring-4 ring-surface"
+              />
               <h3 className="text-base font-bold">Entre em contato agora mesmo</h3>
               <p className="text-sm text-text-secondary">
                 Nós da {BUSINESS.name} estamos prontos para te atender

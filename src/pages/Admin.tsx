@@ -23,6 +23,7 @@ import {
   Pencil,
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
+import { BUSINESS } from '../data/business'
 import { format } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
 import {
@@ -710,9 +711,11 @@ function AdminPanel({ email }: { email: string }) {
 function Brand({ compact }: { compact?: boolean }) {
   return (
     <div className="flex items-center gap-3">
-      <span className="flex h-9 w-9 items-center justify-center rounded-full bg-ink text-xs font-black text-white">
-        AC
-      </span>
+      <img
+        src={compact ? BUSINESS.logoMark : BUSINESS.logo}
+        alt={`Logo ${BUSINESS.name}`}
+        className={`${compact ? 'h-9 w-9' : 'h-11 w-11'} shrink-0 rounded-full bg-black object-cover`}
+      />
       {!compact && (
         <div>
           <p className="text-sm font-bold">Azero Clean</p>

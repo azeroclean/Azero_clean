@@ -6,6 +6,8 @@ export const BUSINESS = {
   whatsapp: '5588994987680',
   instagram: 'https://www.instagram.com/azeroclean/',
   instagramHandle: '@azeroclean',
+  logo: '/images/logo.webp',
+  logoMark: '/images/logo-mark.webp',
   address: 'R. Exemplo, 123 - Centro, Cidade - UF, 00000-000',
   mapsEmbed:
     'https://www.google.com/maps/embed?pb=!1m18!1m12!1m3!1d3974.123456789!2d-39.123456!3d-6.123456!2m3!1f0!2f0!3f0!3m2!1i1024!2i768!4f13.1!3m3!1m2!1s0x7a0b123456789abc%3A0x123456789abcdef0!2sAzero%20Clean!5e0!3m2!1spt-BR!2sbr!4v1234567890123',
