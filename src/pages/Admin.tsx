@@ -45,7 +45,7 @@ const NAV: { id: Tab; label: string; short: string; icon: LucideIcon }[] = [
   { id: 'dashboard', label: 'Início', short: 'Início', icon: LayoutDashboard },
   { id: 'agendamentos', label: 'Agendamentos', short: 'Agenda', icon: Calendar },
   { id: 'servicos', label: 'Serviços', short: 'Serviços', icon: Package },
-  { id: 'horarios', label: 'Horários disponíveis', short: 'Horários', icon: CalendarClock },
+  { id: 'horarios', label: 'Horário de funcionamento', short: 'Horários', icon: CalendarClock },
   { id: 'clientes', label: 'Clientes', short: 'Clientes', icon: Users },
   { id: 'veiculos', label: 'Veículos', short: 'Veículos', icon: Car },
 ]

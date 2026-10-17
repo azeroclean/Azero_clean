@@ -1,59 +1,26 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { CalendarDays, Clock, Loader2, Sun, Sunset } from 'lucide-react'
+import { CalendarDays, Loader2, Sun, Sunset } from 'lucide-react'
 import { addDays, format, startOfToday } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
 import { useServices } from '../hooks/useServices'
 import { useBooking } from '../context/booking-context'
 import { FlowFooter, FlowHeader, SelectionSummary } from '../components/FlowHeader'
-import { fetchBookings, fetchTimeSlots } from '../lib/services'
+import { fetchBookings } from '../lib/services'
 import type { Booking } from '../lib/services'
 import { formatDuration, getTotalLabel, totalDuration } from '../data/services'
 import type { Service } from '../data/services'
-import { BUSINESS } from '../data/business'
+import { useBusinessHours } from '../hooks/useBusinessHours'
+import { availableSlots, DEFAULT_SERVICE_MINUTES, toMinutes } from '../lib/schedule'
+import type { Range } from '../lib/schedule'
 
-// Horários padrão, usados enquanto o admin não cadastrou os seus no Supabase.
-const DEFAULT_TIMES = ['08:30', '09:30', '11:00', '14:00', '15:30', '16:30']
-const DEFAULT_SLOTS: Record<number, string[]> = Object.fromEntries(
-  Object.entries(BUSINESS.hours).map(([day, hours]) => [
-    day,
-    hours ? DEFAULT_TIMES.filter((t) => t >= hours[0] && t < hours[1]) : [],
-  ])
-)
 const DAYS_AHEAD = 30
 
-const toMinutes = (value: string) => {
-  const [h, m] = value.split(':').map(Number)
-  return h * 60 + m
-}
-
-type SlotStatus = 'free' | 'booked' | 'past'
-
-// Um horário fica ocupado se o serviço escolhido (com sua duração) se sobrepõe
-// a algum agendamento já feito no dia. Sem duração cadastrada, bloqueia só o próprio horário.
-function slotStatus(
-  isoDate: string,
-  slot: string,
-  ranges: [number, number][],
-  duration: number
-): SlotStatus {
-  const [h, m] = slot.split(':').map(Number)
-  const slotDate = new Date(`${isoDate}T00:00:00`)
-  slotDate.setHours(h, m, 0, 0)
-  if (slotDate.getTime() <= Date.now()) return 'past'
-
-  const start = toMinutes(slot)
-  const end = start + Math.max(duration, 1)
-  if (ranges.some(([bStart, bEnd]) => start < bEnd && bStart < end)) return 'booked'
-
-  return 'free'
-}
-
-function bookingRanges(bookings: Booking[], services: Service[]): [number, number][] {
+function bookingRanges(bookings: Booking[], services: Service[]): Range[] {
   return bookings.map((booking) => {
     const start = toMinutes(booking.time)
     const minutes = totalDuration(services.filter((s) => booking.service_ids.includes(s.id)))
-    return [start, start + Math.max(minutes, 1)]
+    return [start, start + Math.max(minutes, DEFAULT_SERVICE_MINUTES)]
   })
 }
 
@@ -64,9 +31,7 @@ export function Schedule() {
   const [slotResult, setSlotResult] = useState<{ date: string; bookings: Booking[] } | null>(
     null
   )
-  const [slotConfig, setSlotConfig] = useState<Record<number, string[]> | null | undefined>(
-    undefined
-  )
+  const { hours: week, loading: loadingHours } = useBusinessHours()
   const timesRef = useRef<HTMLElement>(null)
 
   const selectedServices = useMemo(
@@ -80,16 +45,6 @@ export function Schedule() {
       navigate('/servicos', { replace: true })
     }
   }, [loading, selectedServices.length, navigate])
-
-  useEffect(() => {
-    let active = true
-    fetchTimeSlots().then((config) => {
-      if (active) setSlotConfig(config)
-    })
-    return () => {
-      active = false
-    }
-  }, [])
 
   useEffect(() => {
     if (!date) return
@@ -107,18 +62,18 @@ export function Schedule() {
     return Array.from({ length: DAYS_AHEAD }, (_, i) => addDays(today, i))
   }, [])
 
-  const slotsByDay = slotConfig ?? DEFAULT_SLOTS
-  const timesForDay = (day: Date) => slotsByDay[day.getDay()] ?? []
-
-  const loadingSlots = Boolean(date) && (slotResult?.date !== date || slotConfig === undefined)
+  const loadingSlots = Boolean(date) && (slotResult?.date !== date || loadingHours)
   const duration = totalDuration(selectedServices)
 
+  // só os horários em que o serviço inteiro cabe e que estão livres
   const slots = useMemo(() => {
     if (!date || loadingSlots || !slotResult) return []
     const ranges = bookingRanges(slotResult.bookings, services)
-    const times = slotsByDay[new Date(`${date}T00:00:00`).getDay()] ?? []
-    return times.map((slot) => ({ slot, status: slotStatus(date, slot, ranges, duration) }))
-  }, [date, loadingSlots, slotResult, services, slotsByDay, duration])
+    const dayHours = week[new Date(`${date}T00:00:00`).getDay()]
+    return availableSlots(date, dayHours, duration, ranges)
+      .filter((s) => s.status === 'free')
+      .map((s) => ({ slot: s.time, status: s.status }))
+  }, [date, loadingSlots, slotResult, services, week, duration])
   const freeCount = slots.filter((s) => s.status === 'free').length
 
   // se o horário salvo não estiver mais disponível, limpa a seleção
@@ -161,7 +116,7 @@ export function Schedule() {
           <div className="no-scrollbar -mx-4 flex snap-x gap-2 overflow-x-auto px-4 pb-1">
             {days.map((day) => {
               const iso = format(day, 'yyyy-MM-dd')
-              const closed = slotConfig !== undefined && timesForDay(day).length === 0
+              const closed = !loadingHours && !week[day.getDay()]?.isOpen
               const active = iso === date
               return (
                 <button
@@ -227,7 +182,7 @@ export function Schedule() {
                       <group.icon className="h-3.5 w-3.5" />
                       {group.label}
                     </span>
-                    <div className="grid grid-cols-3 gap-2">
+                    <div className="grid grid-cols-4 gap-2">
                       {group.items.map(({ slot, status }) => {
                         const disabled = status !== 'free'
                         const active = time === slot
@@ -238,7 +193,7 @@ export function Schedule() {
                             disabled={disabled}
                             onClick={() => setTime(slot)}
                             aria-pressed={active}
-                            className={`flex items-center justify-center gap-1.5 rounded-xl border-2 py-2.5 text-sm font-semibold transition ${
+                            className={`flex items-center justify-center rounded-xl border-2 py-2.5 text-sm font-semibold transition ${
                               disabled
                                 ? 'cursor-not-allowed border-transparent bg-bg text-text-tertiary/60 line-through'
                                 : active
@@ -246,7 +201,6 @@ export function Schedule() {
                                 : 'border-transparent bg-surface-2 text-text hover:border-primary/50'
                             }`}
                           >
-                            <Clock className="h-3.5 w-3.5" />
                             {slot}
                           </button>
                         )
@@ -254,14 +208,10 @@ export function Schedule() {
                     </div>
                   </div>
                 ))}
-              {freeCount < slots.length && (
-                <p className="text-[11px] text-text-tertiary">
-                  Horários riscados já estão reservados ou passaram.
-                </p>
-              )}
               {duration > 0 && (
                 <p className="text-[11px] text-text-tertiary">
-                  Tempo estimado do serviço: {formatDuration(duration)}.
+                  Mostrando horários de 30 em 30 min em que o serviço
+                  ({formatDuration(duration)}) termina antes do fechamento.
                 </p>
               )}
             </div>

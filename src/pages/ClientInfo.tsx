@@ -6,8 +6,8 @@ import { ptBR } from 'date-fns/locale'
 import { useServices } from '../hooks/useServices'
 import { useBooking } from '../context/booking-context'
 import { FlowFooter, FlowHeader, SelectionSummary } from '../components/FlowHeader'
-import { createAppointment, fetchClientNameByPhone } from '../lib/services'
-import { getServicePriceLabel, getTotalLabel } from '../data/services'
+import { createAppointment, fetchClientNameByPhone, isSlotStillFree } from '../lib/services'
+import { getServicePriceLabel, getTotalLabel, totalDuration } from '../data/services'
 import { VEHICLE_LABELS } from '../data/vehicles'
 
 const capitalize = (value: string) => value.charAt(0).toUpperCase() + value.slice(1)
@@ -112,6 +112,12 @@ export function ClientInfo() {
     setSubmitting(true)
 
     try {
+      const stillFree = await isSlotStillFree(date, time, totalDuration(selectedServices), services)
+      if (!stillFree) {
+        setError('Esse horário acabou de ser reservado ou não cabe mais o serviço. Escolha outro horário.')
+        return
+      }
+
       await createAppointment({
         client_name: form.name.trim(),
         client_phone: form.phone.trim(),

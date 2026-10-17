@@ -13,7 +13,9 @@ import {
 import { useServices } from '../hooks/useServices'
 import { useBooking } from '../context/booking-context'
 import { getServicePriceLabel } from '../data/services'
-import { BUSINESS, getOpenStatus, whatsappLink } from '../data/business'
+import { BUSINESS, whatsappLink } from '../data/business'
+import { getOpenStatus } from '../lib/schedule'
+import { useBusinessHours } from '../hooks/useBusinessHours'
 import { ServiceImage } from '../components/ServiceImage'
 import { DeveloperCredit } from '../components/DeveloperCredit'
 
@@ -27,7 +29,8 @@ export function Home() {
   const { services, loading } = useServices()
   const { vehicleType, isSelected, toggleService } = useBooking()
   const carouselRef = useRef<HTMLDivElement>(null)
-  const status = getOpenStatus()
+  const { hours } = useBusinessHours()
+  const status = getOpenStatus(hours)
 
   const scrollCarousel = (direction: 1 | -1) => {
     const el = carouselRef.current

@@ -1,6 +1,8 @@
 import { services as fallbackServices, formatDuration, formatPrice } from '../data/services'
 import type { Service } from '../data/services'
 import type { VehicleType } from '../data/vehicles'
+import { availableSlots, DEFAULT_HOURS, DEFAULT_SERVICE_MINUTES, toMinutes } from './schedule'
+import type { DayHours, WeekHours } from './schedule'
 
 const FALLBACK_IMAGE = '/images/hero.png'
 
@@ -111,6 +113,23 @@ export async function fetchServiceById(id: string): Promise<Service | null> {
   }
 }
 
+export interface BusinessHoursRow {
+  weekday: number
+  is_open: boolean
+  open_time: string
+  close_time: string
+  break_start: string | null
+  break_end: string | null
+}
+
+export const mapHoursRow = (row: BusinessHoursRow): DayHours => ({
+  isOpen: row.is_open,
+  open: row.open_time,
+  close: row.close_time,
+  breakStart: row.break_start,
+  breakEnd: row.break_end,
+})
+
 export interface Booking {
   time: string
   service_ids: string[]
@@ -136,25 +155,47 @@ export async function fetchBookings(date: string): Promise<Booking[]> {
   }
 }
 
-// Horários configurados pelo admin, por dia da semana (0 = domingo).
-// null = usar os horários padrão do site (sem Supabase ou tabela ainda não criada/vazia).
-export async function fetchTimeSlots(): Promise<Record<number, string[]> | null> {
+// Horário de funcionamento configurado pelo admin (tabela business_hours).
+// null = usar o expediente padrão do site (sem Supabase ou tabela ainda não criada/vazia).
+export async function fetchBusinessHours(): Promise<WeekHours | null> {
   if (!isConfigured()) return null
 
   try {
     const supabase = await getClient()
-    const { data, error } = await supabase.from('time_slots').select('weekday, time').order('time')
+    const { data, error } = await supabase
+      .from('business_hours')
+      .select('weekday, is_open, open_time, close_time, break_start, break_end')
 
     if (error || !data || data.length === 0) return null
 
-    const byDay: Record<number, string[]> = {}
-    for (const row of data as { weekday: number; time: string }[]) {
-      ;(byDay[row.weekday] ??= []).push(row.time)
-    }
-    return byDay
+    const week: WeekHours = { ...DEFAULT_HOURS }
+    for (const row of data as BusinessHoursRow[]) week[row.weekday] = mapHoursRow(row)
+    return week
   } catch {
     return null
   }
+}
+
+// Confere, logo antes de salvar, se o horário ainda está livre
+// (outra pessoa pode ter reservado enquanto o cliente preenchia os dados).
+export async function isSlotStillFree(
+  date: string,
+  time: string,
+  durationMinutes: number,
+  catalog: Service[]
+): Promise<boolean> {
+  const [bookings, week] = await Promise.all([fetchBookings(date), fetchBusinessHours()])
+  const ranges = bookings.map((b): [number, number] => {
+    const start = toMinutes(b.time)
+    const minutes = catalog
+      .filter((s) => b.service_ids.includes(s.id))
+      .reduce((acc, s) => acc + (s.durationMinutes ?? 0), 0)
+    return [start, start + Math.max(minutes, DEFAULT_SERVICE_MINUTES)]
+  })
+  const hours = (week ?? DEFAULT_HOURS)[new Date(`${date}T00:00:00`).getDay()]
+  return availableSlots(date, hours, durationMinutes, ranges).some(
+    (slot) => slot.time === time && slot.status === 'free'
+  )
 }
 
 export async function fetchClientNameByPhone(phone: string): Promise<string | null> {

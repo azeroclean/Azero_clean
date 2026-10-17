@@ -2,6 +2,10 @@ import type { Session } from '@supabase/supabase-js'
 import type { Appointment } from '../types/database'
 import { VEHICLE_TYPES } from '../data/vehicles'
 import { formatDuration } from '../data/services'
+import { mapHoursRow } from './services'
+import type { BusinessHoursRow } from './services'
+import { DEFAULT_HOURS } from './schedule'
+import type { WeekHours } from './schedule'
 
 export type AppointmentStatus = Appointment['status']
 
@@ -231,44 +235,45 @@ export async function saveService(input: ServiceInput, id?: string): Promise<voi
 // Horários disponíveis
 // ------------------------------------------------------------
 
-export interface TimeSlot {
-  id: string
-  weekday: number
-  time: string
-}
-
-export async function fetchAdminTimeSlots(): Promise<TimeSlot[]> {
+// O dono informa só o expediente; os horários de 30 em 30 min são gerados pelo site.
+export async function fetchAdminBusinessHours(): Promise<WeekHours> {
   const supabase = await getClient()
   const { data, error } = await supabase
-    .from('time_slots')
-    .select('id, weekday, time')
-    .order('weekday')
-    .order('time')
+    .from('business_hours')
+    .select('weekday, is_open, open_time, close_time, break_start, break_end')
 
   if (error) {
     throw new Error(
-      error.code === '42P01' || error.message.includes('time_slots')
-        ? 'A tabela de horários ainda não existe. Rode supabase/agenda-servicos.sql no Supabase.'
+      error.code === '42P01' || error.message.includes('business_hours')
+        ? 'A tabela de horário de funcionamento ainda não existe. Rode supabase/horarios-funcionamento.sql no Supabase.'
         : error.message
     )
   }
-  return data as TimeSlot[]
+
+  const week: WeekHours = { ...DEFAULT_HOURS }
+  for (const row of data as BusinessHoursRow[]) week[row.weekday] = mapHoursRow(row)
+  return week
 }
 
-export async function addTimeSlots(slots: { weekday: number; time: string }[]): Promise<void> {
-  if (slots.length === 0) return
+export async function saveBusinessHours(week: WeekHours): Promise<void> {
+  const rows = Object.entries(week).map(([weekday, day]) => ({
+    weekday: Number(weekday),
+    is_open: day.isOpen,
+    open_time: day.open,
+    close_time: day.close,
+    break_start: day.breakStart,
+    break_end: day.breakEnd,
+    updated_at: new Date().toISOString(),
+  }))
   const supabase = await getClient()
-  const { error } = await supabase
-    .from('time_slots')
-    .upsert(slots, { onConflict: 'weekday,time', ignoreDuplicates: true })
+  const { data, error } = await supabase
+    .from('business_hours')
+    .upsert(rows, { onConflict: 'weekday' })
+    .select('weekday')
   if (error) throw new Error(error.message)
-}
-
-export async function removeTimeSlot(id: string): Promise<void> {
-  const supabase = await getClient()
-  const { data, error } = await supabase.from('time_slots').delete().eq('id', id).select('id')
-  if (error) throw new Error(error.message)
-  if (!data || data.length === 0) throw new Error('Sem permissão para remover este horário.')
+  if (!data || data.length === 0) {
+    throw new Error('Sem permissão para salvar. Rode supabase/horarios-funcionamento.sql no Supabase.')
+  }
 }
 
 // ------------------------------------------------------------
