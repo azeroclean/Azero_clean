@@ -17,9 +17,8 @@
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
-const ZAPI_INSTANCE_ID = Deno.env.get('ZAPI_INSTANCE_ID') ?? ''
-const ZAPI_TOKEN = Deno.env.get('ZAPI_TOKEN') ?? ''
-const ZAPI_CLIENT_TOKEN = Deno.env.get('ZAPI_CLIENT_TOKEN') ?? ''
+// Lidos a cada chamada (e sem espaços), para valer na hora em que o secret muda.
+const env = (name: string) => (Deno.env.get(name) ?? '').trim()
 const OWNER_WHATSAPP = Deno.env.get('OWNER_WHATSAPP') ?? '5588994987680'
 const WEBHOOK_SECRET = Deno.env.get('WEBHOOK_SECRET') ?? ''
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL') ?? ''
@@ -75,18 +74,23 @@ function json(body: unknown, status = 200) {
 }
 
 async function sendText(phone: string, message: string) {
+  const clientToken = env('ZAPI_CLIENT_TOKEN')
   const response = await fetch(
-    `https://api.z-api.io/instances/${ZAPI_INSTANCE_ID}/token/${ZAPI_TOKEN}/send-text`,
+    `https://api.z-api.io/instances/${env('ZAPI_INSTANCE_ID')}/token/${env('ZAPI_TOKEN')}/send-text`,
     {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        ...(ZAPI_CLIENT_TOKEN ? { 'Client-Token': ZAPI_CLIENT_TOKEN } : {}),
+        ...(clientToken ? { 'Client-Token': clientToken } : {}),
       },
       body: JSON.stringify({ phone: toWhatsappNumber(phone), message }),
     }
   )
-  if (!response.ok) throw new Error(`Z-API ${response.status}: ${await response.text()}`)
+  if (!response.ok) {
+    // diz se o Client-Token foi enviado (só o tamanho, nunca o valor)
+    const sent = clientToken ? `Client-Token enviado (${clientToken.length} caracteres)` : 'Client-Token NÃO enviado: secret ZAPI_CLIENT_TOKEN vazio ou ausente'
+    throw new Error(`Z-API ${response.status}: ${await response.text()} | ${sent}`)
+  }
 }
 
 function buildMessage(event: Event, data: AppointmentRow, servicesText: string) {
@@ -123,8 +127,8 @@ Deno.serve(async (req) => {
   }
 
   const missing = [
-    ['ZAPI_INSTANCE_ID', ZAPI_INSTANCE_ID],
-    ['ZAPI_TOKEN', ZAPI_TOKEN],
+    ['ZAPI_INSTANCE_ID', env('ZAPI_INSTANCE_ID')],
+    ['ZAPI_TOKEN', env('ZAPI_TOKEN')],
   ]
     .filter(([, value]) => !value)
     .map(([name]) => name)
