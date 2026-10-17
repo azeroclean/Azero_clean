@@ -7,7 +7,7 @@
 // Secrets (Supabase > Edge Functions > Secrets, ou `supabase secrets set`):
 //   ZAPI_INSTANCE_ID     ID da instância (painel Z-API)
 //   ZAPI_TOKEN           token da instância
-//   ZAPI_CLIENT_TOKEN    security token da conta (Client-Token)
+//   ZAPI_CLIENT_TOKEN    (opcional) security token da conta, só se a segurança estiver ativa no Z-API
 //   OWNER_WHATSAPP       (opcional) número do dono com DDI, ex: 5588994987680
 //   WEBHOOK_SECRET       (opcional) se definido, o trigger precisa enviar o mesmo valor
 //                        no header x-webhook-secret (veja supabase/whatsapp-trigger.sql)
@@ -75,7 +75,10 @@ async function sendText(phone: string, message: string) {
     `https://api.z-api.io/instances/${ZAPI_INSTANCE_ID}/token/${ZAPI_TOKEN}/send-text`,
     {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Client-Token': ZAPI_CLIENT_TOKEN },
+      headers: {
+        'Content-Type': 'application/json',
+        ...(ZAPI_CLIENT_TOKEN ? { 'Client-Token': ZAPI_CLIENT_TOKEN } : {}),
+      },
       body: JSON.stringify({ phone: toWhatsappNumber(phone), message }),
     }
   )
@@ -118,7 +121,6 @@ Deno.serve(async (req) => {
   const missing = [
     ['ZAPI_INSTANCE_ID', ZAPI_INSTANCE_ID],
     ['ZAPI_TOKEN', ZAPI_TOKEN],
-    ['ZAPI_CLIENT_TOKEN', ZAPI_CLIENT_TOKEN],
   ]
     .filter(([, value]) => !value)
     .map(([name]) => name)

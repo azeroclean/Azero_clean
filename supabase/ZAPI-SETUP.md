@@ -15,7 +15,7 @@ No painel do Z-API (https://app.z-api.io):
 
 1. Crie ou abra a instância e conecte o WhatsApp da Azero pelo QR Code.
 2. Copie o **ID da instância** e o **Token da instância**.
-3. Em **Segurança**, copie o **Client-Token** (security token da conta).
+3. Se a **Segurança** da conta estiver ativada, copie o **Client-Token** (security token). Se estiver desativada, pode pular.
 
 ## 2. Colocar as chaves no Supabase
 
@@ -25,7 +25,7 @@ Supabase → seu projeto → **Edge Functions → Secrets** (ou **Project Settin
 | --- | --- |
 | `ZAPI_INSTANCE_ID` | ID da instância |
 | `ZAPI_TOKEN` | Token da instância |
-| `ZAPI_CLIENT_TOKEN` | Client-Token |
+| `ZAPI_CLIENT_TOKEN` | Client-Token (só se a segurança estiver ativa) |
 | `OWNER_WHATSAPP` | `5588994987680` (opcional: esse já é o padrão) |
 | `WEBHOOK_SECRET` | uma senha qualquer, ex: `azero-2026-x7k9` (opcional, mas recomendado) |
 
