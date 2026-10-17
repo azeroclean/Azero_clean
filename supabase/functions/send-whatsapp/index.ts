@@ -22,7 +22,7 @@
 //   ZAPI_INSTANCE_ID     ID da instância (painel Z-API)
 //   ZAPI_TOKEN           token da instância
 //   ZAPI_CLIENT_TOKEN    token de segurança da conta (Z-API > Segurança), se estiver ativo
-//   OWNER_WHATSAPP       número do dono com DDI, ex: 5588994396389 (sem ele, o dono
+//   OWNER_WHATSAPP       número do dono com DDI, ex: 5588994987680 (sem ele, o dono
 //                        não recebe o aviso de novo agendamento no WhatsApp)
 //   WEBHOOK_SECRET       (opcional) se definido, o trigger precisa enviar o mesmo valor
 //                        no header x-webhook-secret (veja supabase/whatsapp-trigger.sql)
