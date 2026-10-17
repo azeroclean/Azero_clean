@@ -22,7 +22,8 @@
 //   ZAPI_INSTANCE_ID     ID da instância (painel Z-API)
 //   ZAPI_TOKEN           token da instância
 //   ZAPI_CLIENT_TOKEN    token de segurança da conta (Z-API > Segurança), se estiver ativo
-//   OWNER_WHATSAPP       (opcional) número do dono com DDI, ex: 5588994987680
+//   OWNER_WHATSAPP       número do dono com DDI, ex: 5588994396389 (sem ele, o dono
+//                        não recebe o aviso de novo agendamento no WhatsApp)
 //   WEBHOOK_SECRET       (opcional) se definido, o trigger precisa enviar o mesmo valor
 //                        no header x-webhook-secret (veja supabase/whatsapp-trigger.sql)
 // SUPABASE_URL e SUPABASE_SERVICE_ROLE_KEY são injetados automaticamente.
@@ -298,12 +299,19 @@ Deno.serve(async (req) => {
       }
     }
 
-    // novo: cliente recebe "recebemos" e o dono recebe o aviso; demais: só o cliente
+    // novo: cliente recebe "recebemos" e o dono recebe o aviso; demais: só o cliente.
+    // O aviso do dono só sai com OWNER_WHATSAPP cadastrado e nunca para o número do
+    // próprio cliente (assim o cliente não recebe "Novo agendamento").
     const targets: { audience: Audience; phone: string }[] = [
       { audience: 'cliente', phone: data.client_phone },
     ]
+    const owner = env('OWNER_WHATSAPP')
+    let ownerSkipped: string | undefined
     if (event === 'novo') {
-      targets.push({ audience: 'dono', phone: env('OWNER_WHATSAPP') || '5588994987680' })
+      if (!owner) ownerSkipped = 'OWNER_WHATSAPP não cadastrado'
+      else if (toWhatsappNumber(owner) === toWhatsappNumber(data.client_phone)) {
+        ownerSkipped = 'cliente usa o mesmo número do dono'
+      } else targets.push({ audience: 'dono', phone: owner })
     }
 
     const results = await Promise.allSettled(
@@ -324,7 +332,7 @@ Deno.serve(async (req) => {
       return json({ error: 'falha ao enviar', sent }, 502)
     }
 
-    return json({ ok: true, event, provider: provider(), sent })
+    return json({ ok: true, event, provider: provider(), sent, ...(ownerSkipped ? { ownerSkipped } : {}) })
   } catch (err) {
     return json({ error: 'falha ao enviar', detail: String(err) }, 502)
   }

@@ -41,6 +41,12 @@ Faça um agendamento de teste. Ele ainda deve sair pela Z-API, e o log mostra `"
 supabase secrets set EVOLUTION_URL=https://wa.seudominio.com EVOLUTION_API_KEY=SUA_CHAVE EVOLUTION_INSTANCE=azero-clean --project-ref vicrmbzgpmzfmehklzrf
 ```
 
+O aviso de **novo agendamento para o dono** vai para o número do secret `OWNER_WHATSAPP` (com DDI). Use um número **diferente** do que está conectado na Evolution; sem esse secret, o dono não recebe esse aviso no WhatsApp (o cliente continua recebendo o "Olá… recebemos"):
+
+```bash
+supabase secrets set OWNER_WHATSAPP=5588994396389 --project-ref vicrmbzgpmzfmehklzrf
+```
+
 ### 3. Virar a chave
 
 ```bash

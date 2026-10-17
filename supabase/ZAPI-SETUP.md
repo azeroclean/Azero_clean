@@ -27,7 +27,7 @@ Supabase → seu projeto → **Edge Functions → Secrets** (ou **Project Settin
 | `ZAPI_INSTANCE_ID` | ID da instância |
 | `ZAPI_TOKEN` | Token da instância |
 | `ZAPI_CLIENT_TOKEN` | Client-Token (só se a segurança estiver ativa) |
-| `OWNER_WHATSAPP` | `5588994987680` (opcional: esse já é o padrão) |
+| `OWNER_WHATSAPP` | número do dono com DDI, ex: `5588994396389` (sem ele o dono não recebe o aviso de novo agendamento) |
 | `WEBHOOK_SECRET` | uma senha qualquer, ex: `azero-2026-x7k9` (opcional, mas recomendado) |
 
 Ou, pelo terminal:
