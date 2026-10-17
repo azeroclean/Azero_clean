@@ -20,6 +20,7 @@ import {
   RefreshCw,
   Package,
   CalendarClock,
+  Pencil,
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import { format } from 'date-fns'
@@ -35,6 +36,8 @@ import {
 import { useAdminAuth } from '../hooks/useAdminAuth'
 import { ServicesManager } from './admin/ServicesManager'
 import { TimeSlotsManager } from './admin/TimeSlotsManager'
+import { AppointmentEditor } from './admin/AppointmentEditor'
+import type { EditorResult } from './admin/AppointmentEditor'
 import { fetchAdminAppointments, signOut, updateAppointmentStatus } from '../lib/admin'
 import type { AdminAppointment, AppointmentStatus as Status } from '../lib/admin'
 
@@ -106,7 +109,25 @@ function AdminPanel({ email }: { email: string }) {
   const [loadError, setLoadError] = useState<string | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
   const [busyId, setBusyId] = useState<string | null>(null)
+  const [editing, setEditing] = useState<AdminAppointment | null>(null)
+  const [notice, setNotice] = useState<string | null>(null)
   const [now] = useState(() => new Date())
+
+  useEffect(() => {
+    if (!notice) return
+    const timer = setTimeout(() => setNotice(null), 7000)
+    return () => clearTimeout(timer)
+  }, [notice])
+
+  const handleEdited = (result: EditorResult, message: string) => {
+    setEditing(null)
+    setNotice(message)
+    setAppointments((prev) =>
+      result.type === 'deleted'
+        ? prev.filter((a) => a.id !== result.id)
+        : prev.map((a) => (a.id === result.appointment.id ? result.appointment : a))
+    )
+  }
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -362,7 +383,7 @@ function AdminPanel({ email }: { email: string }) {
                     title="Próximos agendamentos"
                     action={{ label: 'Ver todos', onClick: () => setTab('agendamentos') }}
                   />
-                  <AppointmentList items={upcoming.slice(0, 5)} onStatus={setStatus} busyId={busyId} />
+                  <AppointmentList items={upcoming.slice(0, 5)} onStatus={setStatus} onEdit={setEditing} busyId={busyId} />
                 </section>
 
                 <section className="flex flex-col gap-3 lg:col-span-2">
@@ -421,7 +442,7 @@ function AdminPanel({ email }: { email: string }) {
 
               {/* Celular: cards */}
               <div className="lg:hidden">
-                <AppointmentList items={filtered} onStatus={setStatus} busyId={busyId} />
+                <AppointmentList items={filtered} onStatus={setStatus} onEdit={setEditing} busyId={busyId} />
               </div>
 
               {/* Computador: tabela */}
@@ -459,7 +480,7 @@ function AdminPanel({ email }: { email: string }) {
                           </td>
                           <td className="px-5 py-3">
                             <div className="flex justify-end">
-                              <Actions apt={apt} onStatus={setStatus} busyId={busyId} />
+                              <Actions apt={apt} onStatus={setStatus} onEdit={setEditing} busyId={busyId} />
                             </div>
                           </td>
                         </tr>
@@ -561,6 +582,32 @@ function AdminPanel({ email }: { email: string }) {
           })}
         </div>
       </nav>
+
+      {editing && (
+        <AppointmentEditor
+          appointment={editing}
+          onClose={() => setEditing(null)}
+          onDone={handleEdited}
+        />
+      )}
+
+      {notice && (
+        <div
+          className="fixed inset-x-4 bottom-24 z-40 mx-auto flex max-w-md items-start gap-3 rounded-2xl bg-ink p-4 text-sm text-white shadow-xl lg:bottom-6"
+          role="status"
+        >
+          <Check className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
+          <p className="flex-1">{notice}</p>
+          <button
+            type="button"
+            onClick={() => setNotice(null)}
+            className="shrink-0 text-white/60 hover:text-white"
+            aria-label="Fechar aviso"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+      )}
     </div>
   )
 }
@@ -624,10 +671,11 @@ function StatusPill({ status }: { status: Status }) {
 
 interface ActionProps {
   onStatus: StatusHandler
+  onEdit: (apt: AdminAppointment) => void
   busyId: string | null
 }
 
-function Actions({ apt, onStatus, busyId }: ActionProps & { apt: AdminAppointment }) {
+function Actions({ apt, onStatus, onEdit, busyId }: ActionProps & { apt: AdminAppointment }) {
   const busy = busyId === apt.id
   if (busy) {
     return (
@@ -651,34 +699,49 @@ function Actions({ apt, onStatus, busyId }: ActionProps & { apt: AdminAppointmen
         </button>
         <button
           type="button"
-          onClick={() => onStatus(apt.id, 'cancelado')}
+          onClick={() => onEdit(apt)}
           disabled={disabled}
-          className="flex h-8 w-8 items-center justify-center rounded-full bg-red-50 text-red-600 transition hover:bg-red-100 disabled:opacity-50"
-          aria-label="Cancelar agendamento"
-          title="Cancelar"
+          className="flex h-8 w-8 items-center justify-center rounded-full bg-surface-2 text-text-secondary transition hover:text-text disabled:opacity-50"
+          aria-label="Remarcar ou cancelar"
+          title="Remarcar ou cancelar"
         >
-          <X className="h-4 w-4" />
+          <Pencil className="h-3.5 w-3.5" />
         </button>
       </div>
     )
   }
+  const editButton = (
+    <button
+      type="button"
+      onClick={() => onEdit(apt)}
+      disabled={disabled}
+      className="flex h-8 w-8 items-center justify-center rounded-full bg-surface-2 text-text-secondary transition hover:text-text disabled:opacity-50"
+      aria-label={apt.status === 'confirmado' ? 'Remarcar ou cancelar' : 'Editar ou excluir'}
+      title={apt.status === 'confirmado' ? 'Remarcar ou cancelar' : 'Editar ou excluir'}
+    >
+      <Pencil className="h-3.5 w-3.5" />
+    </button>
+  )
   if (apt.status === 'confirmado') {
     return (
-      <button
-        type="button"
-        onClick={() => onStatus(apt.id, 'concluido')}
-        disabled={disabled}
-        className="flex h-8 items-center gap-1 rounded-full bg-ink px-3 text-xs font-semibold text-white transition hover:bg-ink-2 disabled:opacity-50"
-      >
-        <Check className="h-3.5 w-3.5" />
-        Concluir
-      </button>
+      <div className="flex gap-2">
+        <button
+          type="button"
+          onClick={() => onStatus(apt.id, 'concluido')}
+          disabled={disabled}
+          className="flex h-8 items-center gap-1 rounded-full bg-ink px-3 text-xs font-semibold text-white transition hover:bg-ink-2 disabled:opacity-50"
+        >
+          <Check className="h-3.5 w-3.5" />
+          Concluir
+        </button>
+        {editButton}
+      </div>
     )
   }
-  return null
+  return editButton
 }
 
-function AppointmentList({ items, onStatus, busyId }: ActionProps & { items: AdminAppointment[] }) {
+function AppointmentList({ items, onStatus, onEdit, busyId }: ActionProps & { items: AdminAppointment[] }) {
   if (items.length === 0) return <Empty />
   return (
     <ul className="flex flex-col gap-3">
@@ -709,7 +772,7 @@ function AppointmentList({ items, onStatus, busyId }: ActionProps & { items: Adm
               >
                 <MessageCircle className="h-4 w-4" />
               </a>
-              <Actions apt={apt} onStatus={onStatus} busyId={busyId} />
+              <Actions apt={apt} onStatus={onStatus} onEdit={onEdit} busyId={busyId} />
             </div>
           </div>
         </li>

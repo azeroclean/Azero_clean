@@ -1,13 +1,18 @@
 // Edge Function: envia mensagens de WhatsApp pelo Z-API.
 //
-//   evento "novo"        -> cliente recebe "recebemos seu agendamento" e o dono recebe o aviso
-//   evento "confirmado"  -> avisa o cliente que o agendamento foi confirmado
+// Chamadas pelo banco (supabase/whatsapp-trigger.sql):
+//   "novo"        -> cliente recebe "recebemos seu agendamento" e o dono recebe o aviso
+//   "confirmado"  -> cliente recebe a confirmação
+// Chamadas pelo painel admin (só com login de administrador):
+//   "reagendado"  -> cliente recebe o novo dia/horário (body.previous = horário antigo)
+//   "cancelado"   -> cliente recebe o aviso de cancelamento
+//   body.note     -> recado opcional do admin, adicionado ao fim da mensagem
 //
 // Deploy: supabase functions deploy send-whatsapp --project-ref <ref>
 // Secrets (Supabase > Edge Functions > Secrets, ou `supabase secrets set`):
 //   ZAPI_INSTANCE_ID     ID da instância (painel Z-API)
 //   ZAPI_TOKEN           token da instância
-//   ZAPI_CLIENT_TOKEN    (opcional) security token da conta, só se a segurança estiver ativa no Z-API
+//   ZAPI_CLIENT_TOKEN    token de segurança da conta (Z-API > Segurança), se estiver ativo
 //   OWNER_WHATSAPP       (opcional) número do dono com DDI, ex: 5588994987680
 //   WEBHOOK_SECRET       (opcional) se definido, o trigger precisa enviar o mesmo valor
 //                        no header x-webhook-secret (veja supabase/whatsapp-trigger.sql)
@@ -19,14 +24,23 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
 // Lidos a cada chamada (e sem espaços), para valer na hora em que o secret muda.
 const env = (name: string) => (Deno.env.get(name) ?? '').trim()
-const OWNER_WHATSAPP = Deno.env.get('OWNER_WHATSAPP') ?? '5588994987680'
-const WEBHOOK_SECRET = Deno.env.get('WEBHOOK_SECRET') ?? ''
-const SUPABASE_URL = Deno.env.get('SUPABASE_URL') ?? ''
-const SERVICE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
 
 const BUSINESS_NAME = 'Azero Clean'
 
-type Event = 'novo' | 'confirmado'
+type TriggerEvent = 'novo' | 'confirmado'
+type AdminEvent = 'reagendado' | 'cancelado'
+type Event = TriggerEvent | AdminEvent
+type Audience = 'dono' | 'cliente'
+
+const TRIGGER_EVENTS: Event[] = ['novo', 'confirmado']
+const ADMIN_EVENTS: Event[] = ['reagendado', 'cancelado']
+
+interface RequestBody {
+  id?: string
+  event?: Event
+  note?: string
+  previous?: { date?: string; time?: string }
+}
 
 interface AppointmentRow {
   id: string
@@ -69,8 +83,15 @@ function json(body: unknown, status = 200) {
   else console.log(line)
   return new Response(JSON.stringify(body), {
     status,
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', ...CORS },
   })
+}
+
+// O painel admin chama a função direto do navegador.
+const CORS = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-webhook-secret',
+  'Access-Control-Allow-Methods': 'POST, OPTIONS',
 }
 
 async function sendText(phone: string, message: string) {
@@ -88,36 +109,34 @@ async function sendText(phone: string, message: string) {
   )
   if (!response.ok) {
     // diz se o Client-Token foi enviado (só o tamanho, nunca o valor)
-    const sent = clientToken ? `Client-Token enviado (${clientToken.length} caracteres)` : 'Client-Token NÃO enviado: secret ZAPI_CLIENT_TOKEN vazio ou ausente'
+    const sent = clientToken
+      ? `Client-Token enviado (${clientToken.length} caracteres)`
+      : 'Client-Token NÃO enviado: secret ZAPI_CLIENT_TOKEN vazio ou ausente'
     throw new Error(`Z-API ${response.status}: ${await response.text()} | ${sent}`)
   }
 }
 
-type Audience = 'dono' | 'cliente'
+function buildMessage(
+  event: Event,
+  audience: Audience,
+  data: AppointmentRow,
+  servicesText: string,
+  body: RequestBody
+) {
+  const details = [
+    `📅 Data: ${formatDate(data.date)}`,
+    `🕐 Horário: ${data.time}`,
+    `🚗 Serviços: ${servicesText}`,
+    data.vehicle_type ? `🚙 Veículo: ${VEHICLE_LABELS[data.vehicle_type] ?? data.vehicle_type}` : null,
+    `💰 Valor previsto: ${formatTotal(data.total)}`,
+  ]
+    .filter(Boolean)
+    .join('\n')
 
-function buildMessage(event: Event, audience: Audience, data: AppointmentRow, servicesText: string) {
-  const details =
-    `📅 Data: ${formatDate(data.date)}\n` +
-    `🕐 Horário: ${data.time}\n` +
-    `🚗 Serviços: ${servicesText}\n` +
-    (data.vehicle_type ? `🚙 Veículo: ${VEHICLE_LABELS[data.vehicle_type] ?? data.vehicle_type}\n` : '') +
-    `💰 Valor previsto: ${formatTotal(data.total)}`
+  const note = body.note?.trim() ? `\n\n💬 ${body.note.trim()}` : ''
+  const hello = `Olá, ${data.client_name}!`
 
-  if (event === 'novo' && audience === 'cliente') {
-    return (
-      `Olá, ${data.client_name}! 👋
-` +
-      `Recebemos seu agendamento na *${BUSINESS_NAME}*.
-
-` +
-      `${details}
-
-` +
-      `⏳ Agora é só aguardar: você recebe outra mensagem aqui assim que confirmarmos.`
-    )
-  }
-
-  if (event === 'novo') {
+  if (event === 'novo' && audience === 'dono') {
     return (
       `🔔 *Novo agendamento no site*\n\n` +
       `👤 Cliente: ${data.client_name}\n` +
@@ -127,20 +146,63 @@ function buildMessage(event: Event, audience: Audience, data: AppointmentRow, se
     )
   }
 
+  if (event === 'novo') {
+    return (
+      `${hello} 👋\n` +
+      `Recebemos seu agendamento na *${BUSINESS_NAME}*.\n\n` +
+      `${details}\n\n` +
+      `⏳ Agora é só aguardar: você recebe outra mensagem aqui assim que confirmarmos.`
+    )
+  }
+
+  if (event === 'reagendado') {
+    const before =
+      body.previous?.date && body.previous?.time
+        ? `Antes: ${formatDate(body.previous.date)} às ${body.previous.time}\n\n`
+        : ''
+    return (
+      `${hello} 🔄\n` +
+      `Seu agendamento na *${BUSINESS_NAME}* foi *remarcado*.\n\n` +
+      before +
+      `*Novo horário:*\n${details}` +
+      note +
+      `\n\nSe esse horário não for bom para você, é só responder aqui.`
+    )
+  }
+
+  if (event === 'cancelado') {
+    return (
+      `${hello}\n` +
+      `Seu agendamento na *${BUSINESS_NAME}* de ${formatDate(data.date)} às ${data.time} foi *cancelado*.` +
+      note +
+      `\n\nQuer marcar outro dia? É só responder aqui ou agendar pelo site.`
+    )
+  }
+
   return (
-    `Olá, ${data.client_name}! ✅\n` +
+    `${hello} ✅\n` +
     `Seu agendamento na *${BUSINESS_NAME}* foi confirmado.\n\n` +
-    `${details}\n\n` +
-    `Qualquer dúvida é só responder aqui. Até breve!`
+    `${details}` +
+    note +
+    `\n\nQualquer dúvida é só responder aqui. Até breve!`
   )
 }
 
-Deno.serve(async (req) => {
-  if (req.method !== 'POST') return json({ error: 'method not allowed' }, 405)
+// Quem está chamando: o banco (trigger) ou um administrador logado no painel.
+// deno-lint-ignore no-explicit-any
+async function isAdminRequest(req: Request, supabase: any): Promise<boolean> {
+  const jwt = req.headers.get('authorization')?.replace(/^Bearer\s+/i, '')
+  if (!jwt) return false
+  const { data: userData } = await supabase.auth.getUser(jwt)
+  const userId = userData?.user?.id
+  if (!userId) return false
+  const { data } = await supabase.from('admins').select('id').eq('id', userId).maybeSingle()
+  return Boolean(data)
+}
 
-  if (WEBHOOK_SECRET && req.headers.get('x-webhook-secret') !== WEBHOOK_SECRET) {
-    return json({ error: 'não autorizado' }, 401)
-  }
+Deno.serve(async (req) => {
+  if (req.method === 'OPTIONS') return new Response('ok', { headers: CORS })
+  if (req.method !== 'POST') return json({ error: 'method not allowed' }, 405)
 
   const missing = [
     ['ZAPI_INSTANCE_ID', env('ZAPI_INSTANCE_ID')],
@@ -153,11 +215,24 @@ Deno.serve(async (req) => {
   }
 
   try {
-    const { id, event = 'confirmado' } = (await req.json()) as { id?: string; event?: Event }
+    const body = (await req.json()) as RequestBody
+    const { id, event = 'confirmado' } = body
     if (!id) return json({ error: 'id ausente' }, 400)
-    if (event !== 'novo' && event !== 'confirmado') return json({ error: 'evento inválido' }, 400)
+    if (!TRIGGER_EVENTS.includes(event) && !ADMIN_EVENTS.includes(event)) {
+      return json({ error: 'evento inválido' }, 400)
+    }
 
-    const supabase = createClient(SUPABASE_URL, SERVICE_KEY)
+    const supabase = createClient(env('SUPABASE_URL'), env('SUPABASE_SERVICE_ROLE_KEY'))
+    const webhookSecret = env('WEBHOOK_SECRET')
+    const fromTrigger = !webhookSecret || req.headers.get('x-webhook-secret') === webhookSecret
+    const fromAdmin = await isAdminRequest(req, supabase)
+
+    // Remarcar/cancelar e recados só pelo painel, com login de administrador.
+    if (ADMIN_EVENTS.includes(event) || body.note) {
+      if (!fromAdmin) return json({ error: 'não autorizado' }, 401)
+    } else if (!fromTrigger && !fromAdmin) {
+      return json({ error: 'não autorizado' }, 401)
+    }
 
     const { data, error } = await supabase
       .from('appointments')
@@ -177,30 +252,30 @@ Deno.serve(async (req) => {
         .select('title')
         .in('id', data.service_ids)
       if (services && services.length > 0) {
-        servicesText = services.map((service) => service.title).join(', ')
+        servicesText = services.map((service: { title: string }) => service.title).join(', ')
       }
     }
 
-    // novo agendamento: cliente recebe "recebemos" e o dono recebe o aviso
-    // confirmado: só o cliente recebe a confirmação
-    const targets: { audience: Audience; phone: string }[] =
-      event === 'novo'
-        ? [
-            { audience: 'cliente', phone: data.client_phone },
-            { audience: 'dono', phone: OWNER_WHATSAPP },
-          ]
-        : [{ audience: 'cliente', phone: data.client_phone }]
+    // novo: cliente recebe "recebemos" e o dono recebe o aviso; demais: só o cliente
+    const targets: { audience: Audience; phone: string }[] = [
+      { audience: 'cliente', phone: data.client_phone },
+    ]
+    if (event === 'novo') {
+      targets.push({ audience: 'dono', phone: env('OWNER_WHATSAPP') || '5588994987680' })
+    }
 
     const results = await Promise.allSettled(
       targets.map(({ audience, phone }) => {
-        console.log(`[send-whatsapp] enviando "${event}" para ${audience} ...${toWhatsappNumber(phone).slice(-4)}`)
-        return sendText(phone, buildMessage(event, audience, data, servicesText))
+        console.log(
+          `[send-whatsapp] enviando "${event}" para ${audience} ...${toWhatsappNumber(phone).slice(-4)}`
+        )
+        return sendText(phone, buildMessage(event, audience, data, servicesText, body))
       })
     )
     const sent = Object.fromEntries(
       targets.map(({ audience }, i) => {
-        const r = results[i]
-        return [audience, r.status === 'fulfilled' ? 'ok' : String(r.reason)]
+        const result = results[i]
+        return [audience, result.status === 'fulfilled' ? 'ok' : String(result.reason)]
       })
     )
     if (results.every((r) => r.status === 'rejected')) {

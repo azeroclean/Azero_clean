@@ -19,6 +19,7 @@ export interface AdminAppointment {
   vehicle: string
   phone: string
   total: number
+  serviceIds: string[]
 }
 
 type AppointmentRow = Pick<
@@ -117,6 +118,7 @@ export async function fetchAdminAppointments(): Promise<AdminAppointment[]> {
     time: row.time,
     status: row.status,
     total: Number(row.total ?? 0),
+    serviceIds: row.service_ids ?? [],
   }))
 }
 
@@ -132,6 +134,72 @@ export async function updateAppointmentStatus(id: string, status: AppointmentSta
   // Sem a política appointments_admin_all o RLS bloqueia o update sem erro.
   if (!data || data.length === 0) {
     throw new Error('Sem permissão para alterar. Rode supabase/admin-policies.sql no Supabase.')
+  }
+}
+
+// Agendamentos do dia (exceto um), para calcular os horários livres ao remarcar.
+export async function fetchDayBookings(
+  date: string,
+  exceptId: string
+): Promise<{ time: string; service_ids: string[] }[]> {
+  const supabase = await getClient()
+  const { data, error } = await supabase
+    .from('appointments')
+    .select('id, time, service_ids')
+    .eq('date', date)
+    .neq('status', 'cancelado')
+    .neq('id', exceptId)
+  if (error) throw new Error(error.message)
+  return (data as { time: string; service_ids: string[] | null }[]).map((row) => ({
+    time: row.time,
+    service_ids: row.service_ids ?? [],
+  }))
+}
+
+export async function rescheduleAppointment(id: string, date: string, time: string): Promise<void> {
+  const supabase = await getClient()
+  const { data, error } = await supabase
+    .from('appointments')
+    .update({ date, time })
+    .eq('id', id)
+    .select('id')
+  if (error) throw new Error(error.message)
+  if (!data || data.length === 0) {
+    throw new Error('Sem permissão para alterar. Rode supabase/admin-policies.sql no Supabase.')
+  }
+}
+
+export async function deleteAppointment(id: string): Promise<void> {
+  const supabase = await getClient()
+  const { data, error } = await supabase.from('appointments').delete().eq('id', id).select('id')
+  if (error) throw new Error(error.message)
+  if (!data || data.length === 0) {
+    throw new Error('Sem permissão para excluir. Rode supabase/admin-policies.sql no Supabase.')
+  }
+}
+
+export type ClientNotice =
+  | { event: 'reagendado'; previous: { date: string; time: string }; note?: string }
+  | { event: 'cancelado'; note?: string }
+
+// Manda WhatsApp para o cliente pela Edge Function (Z-API), com o login do admin.
+export async function notifyClient(id: string, notice: ClientNotice): Promise<void> {
+  const supabase = await getClient()
+  const { data, error } = await supabase.functions.invoke('send-whatsapp', {
+    body: { id, ...notice },
+  })
+  if (error) {
+    let detail = error.message
+    try {
+      const body = await (error as { context?: Response }).context?.json()
+      if (body?.error) detail = body.missing ? `${body.error}: ${body.missing.join(', ')}` : body.error
+    } catch {
+      // mantém a mensagem padrão
+    }
+    throw new Error(`Não foi possível enviar o WhatsApp (${detail}).`)
+  }
+  if (data?.sent?.cliente && data.sent.cliente !== 'ok') {
+    throw new Error('O Z-API recusou a mensagem. Veja os logs da função send-whatsapp.')
   }
 }
 
