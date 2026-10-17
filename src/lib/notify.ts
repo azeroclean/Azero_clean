@@ -88,7 +88,7 @@ export function showSystemNotification(apt: AdminAppointment) {
     const n = new Notification('🔔 Novo agendamento para confirmar', {
       body: `${apt.client} · ${whenLabel(apt)}\n${apt.service}`,
       tag: `agendamento-${apt.id}`,
-      icon: '/favicon.svg',
+      icon: '/icons/icon-192.png',
     })
     n.onclick = () => {
       window.focus()
