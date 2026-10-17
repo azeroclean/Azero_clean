@@ -4,7 +4,8 @@
 //   "novo"        -> cliente recebe "recebemos seu agendamento" e o dono recebe o aviso
 //   "confirmado"  -> cliente recebe a confirmação
 // Chamadas pelo painel admin (só com login de administrador):
-//   "reagendado"  -> cliente recebe o novo dia/horário (body.previous = horário antigo)
+//   "alterado"    -> cliente recebe o que mudou (serviços e/ou horário) e como ficou
+//                    (body.previous = valores antigos; "reagendado" ainda é aceito)
 //   "cancelado"   -> cliente recebe o aviso de cancelamento
 //   body.note     -> recado opcional do admin, adicionado ao fim da mensagem
 //
@@ -28,18 +29,18 @@ const env = (name: string) => (Deno.env.get(name) ?? '').trim()
 const BUSINESS_NAME = 'Azero Clean'
 
 type TriggerEvent = 'novo' | 'confirmado'
-type AdminEvent = 'reagendado' | 'cancelado'
+type AdminEvent = 'alterado' | 'reagendado' | 'cancelado'
 type Event = TriggerEvent | AdminEvent
 type Audience = 'dono' | 'cliente'
 
 const TRIGGER_EVENTS: Event[] = ['novo', 'confirmado']
-const ADMIN_EVENTS: Event[] = ['reagendado', 'cancelado']
+const ADMIN_EVENTS: Event[] = ['alterado', 'reagendado', 'cancelado']
 
 interface RequestBody {
   id?: string
   event?: Event
   note?: string
-  previous?: { date?: string; time?: string }
+  previous?: { date?: string; time?: string; services?: string }
 }
 
 interface AppointmentRow {
@@ -155,18 +156,22 @@ function buildMessage(
     )
   }
 
-  if (event === 'reagendado') {
-    const before =
-      body.previous?.date && body.previous?.time
-        ? `Antes: ${formatDate(body.previous.date)} às ${body.previous.time}\n\n`
-        : ''
+  if (event === 'alterado' || event === 'reagendado') {
+    const prev = body.previous ?? {}
+    const changes = [
+      prev.services ? `• Serviços: antes _${prev.services}_, agora *${servicesText}*` : null,
+      prev.date && prev.time
+        ? `• Horário: antes _${formatDate(prev.date)} às ${prev.time}_, agora *${formatDate(data.date)} às ${data.time}*`
+        : null,
+    ].filter(Boolean)
+    const scheduleOnly = !prev.services
     return (
-      `${hello} 🔄\n` +
-      `Seu agendamento na *${BUSINESS_NAME}* foi *remarcado*.\n\n` +
-      before +
-      `*Novo horário:*\n${details}` +
+      `${hello} ✏️\n` +
+      `Seu agendamento na *${BUSINESS_NAME}* foi ${scheduleOnly ? '*remarcado*' : '*alterado*'}.\n\n` +
+      (changes.length ? `*O que mudou:*\n${changes.join('\n')}\n\n` : '') +
+      `*Como ficou:*\n${details}` +
       note +
-      `\n\nSe esse horário não for bom para você, é só responder aqui.`
+      `\n\nSe algo não estiver bom para você, é só responder aqui.`
     )
   }
 

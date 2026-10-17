@@ -1,6 +1,7 @@
 import type { Session } from '@supabase/supabase-js'
 import type { Appointment } from '../types/database'
 import { VEHICLE_TYPES } from '../data/vehicles'
+import type { VehicleType } from '../data/vehicles'
 import { formatDuration } from '../data/services'
 import { mapHoursRow } from './services'
 import type { BusinessHoursRow } from './services'
@@ -20,6 +21,7 @@ export interface AdminAppointment {
   phone: string
   total: number
   serviceIds: string[]
+  vehicleType: VehicleType | null
 }
 
 type AppointmentRow = Pick<
@@ -119,6 +121,7 @@ export async function fetchAdminAppointments(): Promise<AdminAppointment[]> {
     status: row.status,
     total: Number(row.total ?? 0),
     serviceIds: row.service_ids ?? [],
+    vehicleType: (row.vehicle_type as VehicleType | null) ?? null,
   }))
 }
 
@@ -186,11 +189,18 @@ export async function fetchDayBookings(
   }))
 }
 
-export async function rescheduleAppointment(id: string, date: string, time: string): Promise<void> {
+export interface AppointmentChanges {
+  date: string
+  time: string
+  service_ids: string[]
+  total: number
+}
+
+export async function updateAppointment(id: string, changes: AppointmentChanges): Promise<void> {
   const supabase = await getClient()
   const { data, error } = await supabase
     .from('appointments')
-    .update({ date, time })
+    .update(changes)
     .eq('id', id)
     .select('id')
   if (error) throw new Error(error.message)
@@ -209,7 +219,12 @@ export async function deleteAppointment(id: string): Promise<void> {
 }
 
 export type ClientNotice =
-  | { event: 'reagendado'; previous: { date: string; time: string }; note?: string }
+  | {
+      event: 'alterado'
+      // o que era antes; só vai o que mudou
+      previous: { date?: string; time?: string; services?: string }
+      note?: string
+    }
   | { event: 'cancelado'; note?: string }
 
 // Manda WhatsApp para o cliente pela Edge Function (Z-API), com o login do admin.

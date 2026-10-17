@@ -7,6 +7,7 @@ import {
   Check,
   Loader2,
   MessageCircle,
+  Package,
   Trash2,
   X,
   XCircle,
@@ -15,13 +16,13 @@ import {
   deleteAppointment,
   fetchDayBookings,
   notifyClient,
-  rescheduleAppointment,
+  updateAppointment,
   updateAppointmentStatus,
 } from '../../lib/admin'
 import type { AdminAppointment } from '../../lib/admin'
 import { useServices } from '../../hooks/useServices'
 import { useBusinessHours } from '../../hooks/useBusinessHours'
-import { totalDuration, formatDuration } from '../../data/services'
+import { totalDuration, formatDuration, formatPrice, getServicePrice } from '../../data/services'
 import { availableSlots, DEFAULT_SERVICE_MINUTES, toIsoDate, toMinutes } from '../../lib/schedule'
 import type { Range } from '../../lib/schedule'
 
@@ -40,13 +41,17 @@ const longDate = (iso: string) => {
   return text.charAt(0).toUpperCase() + text.slice(1)
 }
 
-type Busy = 'reschedule' | 'cancel' | 'delete' | null
+type Busy = 'save' | 'cancel' | 'delete' | null
+
+const sameIds = (a: string[], b: string[]) =>
+  a.length === b.length && [...a].sort().join() === [...b].sort().join()
 
 export function AppointmentEditor({ appointment: apt, onClose, onDone }: Props) {
   const { services } = useServices()
   const { hours: week, loading: loadingHours } = useBusinessHours()
   const [date, setDate] = useState(apt.date)
-  const [time, setTime] = useState<string | null>(null)
+  const [time, setTime] = useState<string | null>(apt.time)
+  const [selectedIds, setSelectedIds] = useState<string[]>(apt.serviceIds)
   const [bookings, setBookings] = useState<{ date: string; ranges: Range[] } | null>(null)
   const [loadError, setLoadError] = useState<string | null>(null)
   const [notify, setNotify] = useState(true)
@@ -58,10 +63,15 @@ export function AppointmentEditor({ appointment: apt, onClose, onDone }: Props) 
   const [today] = useState(() => toIsoDate(new Date()))
   const canceled = apt.status === 'cancelado'
 
-  const duration = useMemo(
-    () => totalDuration(services.filter((s) => apt.serviceIds.includes(s.id))),
-    [services, apt.serviceIds]
+  const selectedServices = useMemo(
+    () => services.filter((s) => selectedIds.includes(s.id)),
+    [services, selectedIds]
   )
+  const duration = totalDuration(selectedServices)
+  const total = selectedServices.reduce((acc, s) => acc + getServicePrice(s, apt.vehicleType), 0)
+
+  const toggleService = (id: string) =>
+    setSelectedIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]))
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -101,7 +111,11 @@ export function AppointmentEditor({ appointment: apt, onClose, onDone }: Props) 
   }, [loadingSlots, bookings, week, date, duration])
 
   const dayClosed = !week[new Date(`${date}T00:00:00`).getDay()]?.isOpen
-  const changed = time !== null && (date !== apt.date || time !== apt.time)
+  const servicesChanged = !sameIds(selectedIds, apt.serviceIds)
+  const scheduleChanged = date !== apt.date || time !== apt.time
+  const timeFits = time !== null && slots.some((s) => s.time === time)
+  const canSave =
+    (servicesChanged || scheduleChanged) && selectedIds.length > 0 && !loadingSlots && timeFits
 
   // A ação no banco sempre vale; se o WhatsApp falhar, avisa sem desfazer.
   const sendNotice = async (fn: () => Promise<void>) => {
@@ -114,22 +128,35 @@ export function AppointmentEditor({ appointment: apt, onClose, onDone }: Props) 
     }
   }
 
-  const handleReschedule = async () => {
-    if (!time || !changed) return
-    setBusy('reschedule')
+  const handleSave = async () => {
+    if (!canSave || !time) return
+    setBusy('save')
     setError(null)
     try {
-      await rescheduleAppointment(apt.id, date, time)
+      await updateAppointment(apt.id, { date, time, service_ids: selectedIds, total })
+      const newTitles = selectedServices.map((s) => s.title).join(', ')
       const notice = await sendNotice(() =>
         notifyClient(apt.id, {
-          event: 'reagendado',
-          previous: { date: apt.date, time: apt.time },
+          event: 'alterado',
+          previous: {
+            ...(scheduleChanged ? { date: apt.date, time: apt.time } : {}),
+            ...(servicesChanged ? { services: apt.service } : {}),
+          },
           note,
         })
       )
+      const what = [
+        servicesChanged && 'serviços',
+        scheduleChanged && `horário (${longDate(date)} às ${time})`,
+      ]
+        .filter(Boolean)
+        .join(' e ')
       onDone(
-        { type: 'updated', appointment: { ...apt, date, time } },
-        `Remarcado para ${longDate(date)} às ${time}.${notice}`
+        {
+          type: 'updated',
+          appointment: { ...apt, date, time, serviceIds: selectedIds, service: newTitles, total },
+        },
+        `Agendamento atualizado: ${what}.${notice}`
       )
     } catch (err) {
       setError((err as Error).message)
@@ -206,9 +233,63 @@ export function AppointmentEditor({ appointment: apt, onClose, onDone }: Props) 
         <div className="flex flex-col gap-5 overflow-y-auto p-5">
           {!canceled && (
             <section className="flex flex-col gap-3">
+              <div className="flex items-center justify-between gap-2">
+                <h3 className="flex items-center gap-2 text-sm font-semibold">
+                  <Package className="h-4 w-4 text-lilac" />
+                  Serviços
+                </h3>
+                <span className="text-xs text-text-secondary">
+                  {selectedIds.length > 0 && (
+                    <>
+                      {formatDuration(duration)} · <span className="font-bold text-text">{total > 0 ? formatPrice(total) : 'A combinar'}</span>
+                    </>
+                  )}
+                </span>
+              </div>
+              <ul className="flex flex-col gap-2">
+                {services.map((service) => {
+                  const checked = selectedIds.includes(service.id)
+                  const price = getServicePrice(service, apt.vehicleType)
+                  return (
+                    <li key={service.id}>
+                      <label
+                        className={`flex cursor-pointer items-center gap-3 rounded-xl border-2 px-3 py-2.5 transition ${
+                          checked ? 'border-primary bg-primary/5' : 'border-transparent bg-surface-2 hover:border-border'
+                        }`}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          onChange={() => toggleService(service.id)}
+                          className="h-4 w-4 accent-primary"
+                        />
+                        <span className="min-w-0 flex-1">
+                          <span className="block truncate text-sm font-semibold">{service.title}</span>
+                          {service.durationMinutes ? (
+                            <span className="text-[11px] text-text-tertiary">
+                              {formatDuration(service.durationMinutes)}
+                            </span>
+                          ) : null}
+                        </span>
+                        <span className="shrink-0 text-xs font-semibold">
+                          {price > 0 ? formatPrice(price) : 'A combinar'}
+                        </span>
+                      </label>
+                    </li>
+                  )
+                })}
+              </ul>
+              {selectedIds.length === 0 && (
+                <p className="text-xs font-medium text-red-600">Escolha pelo menos um serviço.</p>
+              )}
+            </section>
+          )}
+
+          {!canceled && (
+            <section className="flex flex-col gap-3">
               <h3 className="flex items-center gap-2 text-sm font-semibold">
                 <CalendarClock className="h-4 w-4 text-lilac" />
-                Remarcar
+                Data e horário
               </h3>
               <input
                 type="date"
@@ -227,7 +308,15 @@ export function AppointmentEditor({ appointment: apt, onClose, onDone }: Props) 
                 <p className="flex items-center gap-2 text-xs text-text-tertiary">
                   <Loader2 className="h-3.5 w-3.5 animate-spin" /> Carregando horários...
                 </p>
-              ) : dayClosed ? (
+              ) : null}
+              {!loadError && !loadingSlots && time && !timeFits && !dayClosed && (
+                <p className="rounded-xl bg-amber-50 p-3 text-xs font-medium text-amber-800">
+                  {servicesChanged
+                    ? `Com os serviços novos (${formatDuration(duration)}), o horário ${time} não cabe mais. Escolha outro abaixo.`
+                    : `O horário ${time} não está livre nesse dia. Escolha outro abaixo.`}
+                </p>
+              )}
+              {loadError || loadingSlots ? null : dayClosed ? (
                 <p className="rounded-xl bg-surface-2 p-3 text-center text-xs text-lilac">
                   Fechado nesse dia. Escolha outra data.
                 </p>
@@ -299,12 +388,16 @@ export function AppointmentEditor({ appointment: apt, onClose, onDone }: Props) 
           {!canceled && (
             <button
               type="button"
-              onClick={handleReschedule}
-              disabled={!changed || busy !== null}
+              onClick={handleSave}
+              disabled={!canSave || busy !== null}
               className="flex h-12 items-center justify-center gap-2 rounded-full bg-primary text-sm font-semibold text-white transition hover:bg-primary-600 disabled:bg-surface-2 disabled:text-text-tertiary"
             >
-              {busy === 'reschedule' ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
-              {time && changed ? `Remarcar para ${time}` : 'Escolha o novo horário'}
+              {busy === 'save' ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
+              {canSave
+                ? 'Salvar alterações'
+                : servicesChanged || scheduleChanged
+                ? 'Escolha um horário que caiba'
+                : 'Altere serviço, data ou horário'}
             </button>
           )}
 
