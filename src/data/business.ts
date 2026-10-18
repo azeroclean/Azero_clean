@@ -1,16 +1,19 @@
 export const BUSINESS = {
   name: 'Azero Clean',
   tagline: 'Seu carro sempre com outro nível',
-  city: 'Atendimento com agendamento',
+  city: 'Tianguá - CE',
   phone: '88994987680',
   whatsapp: '5588994987680',
   instagram: 'https://www.instagram.com/azeroclean/',
   instagramHandle: '@azeroclean',
   logo: '/images/logo.webp',
   logoMark: '/images/logo-mark.webp',
-  address: 'R. Exemplo, 123 - Centro, Cidade - UF, 00000-000',
-  mapsEmbed:
-    'https://www.google.com/maps/embed?pb=!1m18!1m12!1m3!1d3974.123456789!2d-39.123456!3d-6.123456!2m3!1f0!2f0!3f0!3m2!1i1024!2i768!4f13.1!3m3!1m2!1s0x7a0b123456789abc%3A0x123456789abcdef0!2sAzero%20Clean!5e0!3m2!1spt-BR!2sbr!4v1234567890123',
+  address: 'Rua Francisco Ananias de Vasconcelos, Tianguá - CE, 62320-000',
+  // Ponto do mapa (Apple Maps: https://maps.apple/p/G-XA40d9ggHV5.z)
+  coordinates: { lat: -3.71912, lng: -40.982385 },
+  mapsEmbed: 'https://maps.google.com/maps?q=-3.71912,-40.982385&z=17&hl=pt-BR&output=embed',
+  directions: 'https://www.google.com/maps/dir/?api=1&destination=-3.71912,-40.982385',
+  appleMaps: 'https://maps.apple/p/G-XA40d9ggHV5.z',
   // Expediente padrão (0 = domingo; null = fechado). Usado até o dono salvar o dele no painel.
   hours: {
     0: null,

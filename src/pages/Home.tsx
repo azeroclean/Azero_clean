@@ -5,6 +5,7 @@ import {
   MessageCircle,
   Camera,
   MapPin,
+  Navigation,
   ArrowLeft,
   ArrowRight,
   CalendarDays,
@@ -64,7 +65,7 @@ export function Home() {
               <h1 className="text-xl font-bold">{BUSINESS.name}</h1>
               <span className="flex items-center gap-1.5 text-sm text-white/80">
                 <MapPin className="h-4 w-4 shrink-0" />
-                {BUSINESS.tagline}
+                {BUSINESS.city}
               </span>
               <span
                 className={`w-fit rounded-full px-3 py-1 text-xs font-semibold ${
@@ -183,6 +184,26 @@ export function Home() {
               loading="lazy"
               referrerPolicy="no-referrer-when-downgrade"
             />
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            <a
+              href={BUSINESS.directions}
+              target="_blank"
+              rel="noreferrer"
+              className="flex h-11 items-center justify-center gap-2 rounded-full bg-ink text-sm font-semibold text-white transition hover:bg-ink-2"
+            >
+              <Navigation className="h-4 w-4" />
+              Como chegar
+            </a>
+            <a
+              href={BUSINESS.appleMaps}
+              target="_blank"
+              rel="noreferrer"
+              className="flex h-11 items-center justify-center gap-2 rounded-full bg-surface-2 text-sm font-semibold text-text transition hover:bg-border"
+            >
+              <MapPin className="h-4 w-4" />
+              Apple Maps
+            </a>
           </div>
         </section>
 
