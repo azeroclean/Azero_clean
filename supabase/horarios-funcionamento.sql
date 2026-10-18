@@ -36,15 +36,51 @@ create policy "business_hours_admin_all"
   using (public.is_admin())
   with check (public.is_admin());
 
--- Expediente inicial (o dono ajusta pelo painel):
--- seg a sex 08:00-18:00, sábado 08:00-13:00, domingo fechado
-insert into public.business_hours (weekday, is_open, open_time, close_time)
-values
-  (0, false, '08:00', '18:00'),
-  (1, true,  '08:00', '18:00'),
-  (2, true,  '08:00', '18:00'),
-  (3, true,  '08:00', '18:00'),
-  (4, true,  '08:00', '18:00'),
-  (5, true,  '08:00', '18:00'),
-  (6, true,  '08:00', '13:00')
-on conflict (weekday) do nothing;
+-- Expediente inicial (o dono ajusta pelo painel).
+-- Se já existirem horários no formato antigo (time_slots), eles são convertidos:
+-- cada dia vai do primeiro horário cadastrado até 1h depois do último; dia sem horário = fechado.
+-- Sem horários antigos: seg a sex 08:00-18:00, sábado 08:00-13:00, domingo fechado.
+-- Não sobrescreve dias que já estão em business_hours.
+do $$
+begin
+  if to_regclass('public.time_slots') is not null
+     and exists (select 1 from public.time_slots) then
+    insert into public.business_hours (weekday, is_open, open_time, close_time)
+    with mins as (
+      select weekday,
+             split_part(time, ':', 1)::int * 60 + split_part(time, ':', 2)::int as m
+      from public.time_slots
+      where time ~ '^[0-9]{2}:[0-9]{2}'
+    ),
+    agg as (
+      select weekday,
+             (min(m) / 30) * 30 as o,
+             least(((max(m) + 29) / 30) * 30 + 60, 23 * 60 + 30) as c
+      from mins
+      group by weekday
+    )
+    select d.weekday,
+           agg.weekday is not null,
+           coalesce(lpad((agg.o / 60)::text, 2, '0') || ':' || lpad((agg.o % 60)::text, 2, '0'), '08:00'),
+           coalesce(lpad((agg.c / 60)::text, 2, '0') || ':' || lpad((agg.c % 60)::text, 2, '0'), '18:00')
+    from generate_series(0, 6) as d (weekday)
+    left join agg on agg.weekday = d.weekday
+    on conflict (weekday) do nothing;
+  else
+    insert into public.business_hours (weekday, is_open, open_time, close_time)
+    values
+      (0, false, '08:00', '18:00'),
+      (1, true,  '08:00', '18:00'),
+      (2, true,  '08:00', '18:00'),
+      (3, true,  '08:00', '18:00'),
+      (4, true,  '08:00', '18:00'),
+      (5, true,  '08:00', '18:00'),
+      (6, true,  '08:00', '13:00')
+    on conflict (weekday) do nothing;
+  end if;
+end $$;
+
+-- Conferência: como ficou o expediente de cada dia (0 = domingo)
+select weekday, is_open, open_time, close_time, break_start, break_end
+from public.business_hours
+order by weekday;

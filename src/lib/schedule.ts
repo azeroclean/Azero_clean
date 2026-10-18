@@ -117,6 +117,32 @@ export function toIsoDate(date: Date) {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
 }
 
+// Converte os horários do formato antigo (time_slots: um horário de início por linha)
+// em expediente: do primeiro horário do dia até 1h depois do último. Dia sem horário = fechado.
+export const LEGACY_LAST_SLOT_EXTRA_MINUTES = 60
+
+export function weekFromLegacySlots(rows: { weekday: number; time: string }[]): WeekHours | null {
+  if (rows.length === 0) return null
+  const byDay = new Map<number, number[]>()
+  for (const row of rows) {
+    if (!/^\d{2}:\d{2}/.test(row.time)) continue
+    byDay.set(row.weekday, [...(byDay.get(row.weekday) ?? []), toMinutes(row.time.slice(0, 5))])
+  }
+  const week: WeekHours = {}
+  for (let day = 0; day < 7; day++) {
+    const times = byDay.get(day)
+    if (!times?.length) {
+      week[day] = { ...DEFAULT_HOURS[day], isOpen: false }
+      continue
+    }
+    const first = Math.floor(Math.min(...times) / SLOT_STEP_MINUTES) * SLOT_STEP_MINUTES
+    const last = Math.ceil(Math.max(...times) / SLOT_STEP_MINUTES) * SLOT_STEP_MINUTES
+    const close = Math.min(last + LEGACY_LAST_SLOT_EXTRA_MINUTES, 23 * 60 + 30)
+    week[day] = { isOpen: true, open: toTime(first), close: toTime(close), breakStart: null, breakEnd: null }
+  }
+  return week
+}
+
 export function getOpenStatus(week: WeekHours, now = new Date()) {
   const today = week[now.getDay()]
   if (!today?.isOpen) return { open: false, label: 'Fechado hoje' }

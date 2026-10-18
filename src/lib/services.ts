@@ -1,7 +1,13 @@
 import { services as fallbackServices, formatDuration, formatPrice } from '../data/services'
 import type { Service } from '../data/services'
 import type { VehicleType } from '../data/vehicles'
-import { availableSlots, DEFAULT_HOURS, DEFAULT_SERVICE_MINUTES, toMinutes } from './schedule'
+import {
+  availableSlots,
+  DEFAULT_HOURS,
+  DEFAULT_SERVICE_MINUTES,
+  toMinutes,
+  weekFromLegacySlots,
+} from './schedule'
 import type { DayHours, WeekHours } from './schedule'
 
 const FALLBACK_IMAGE = '/images/hero.png'
@@ -166,11 +172,16 @@ export async function fetchBusinessHours(): Promise<WeekHours | null> {
       .from('business_hours')
       .select('weekday, is_open, open_time, close_time, break_start, break_end')
 
-    if (error || !data || data.length === 0) return null
+    if (!error && data && data.length > 0) {
+      const week: WeekHours = { ...DEFAULT_HOURS }
+      for (const row of data as BusinessHoursRow[]) week[row.weekday] = mapHoursRow(row)
+      return week
+    }
 
-    const week: WeekHours = { ...DEFAULT_HOURS }
-    for (const row of data as BusinessHoursRow[]) week[row.weekday] = mapHoursRow(row)
-    return week
+    // Tabela nova ainda não criada: usa os horários que o admin cadastrou no formato antigo.
+    const legacy = await supabase.from('time_slots').select('weekday, time')
+    if (legacy.error || !legacy.data) return null
+    return weekFromLegacySlots(legacy.data as { weekday: number; time: string }[])
   } catch {
     return null
   }
