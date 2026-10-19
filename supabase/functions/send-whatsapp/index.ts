@@ -5,6 +5,7 @@
 // Chamadas pelo banco (supabase/whatsapp-trigger.sql):
 //   "novo"        -> cliente recebe "recebemos seu agendamento" e o dono recebe o aviso
 //   "confirmado"  -> cliente recebe a confirmação
+//   "lembrete"    -> cliente recebe o aviso de 15 minutos antes (lembrete-15min.sql)
 // Chamadas pelo painel admin (só com login de administrador):
 //   "alterado"    -> cliente recebe o que mudou (serviços e/ou horário) e como ficou
 //                    (body.previous = valores antigos; "reagendado" ainda é aceito)
@@ -22,6 +23,8 @@
 //   ZAPI_INSTANCE_ID     ID da instância (painel Z-API)
 //   ZAPI_TOKEN           token da instância
 //   ZAPI_CLIENT_TOKEN    token de segurança da conta (Z-API > Segurança), se estiver ativo
+//   BUSINESS_ADDRESS     (opcional) endereço mandado ao cliente
+//   BUSINESS_MAPS_URL    (opcional) link "Como chegar" mandado ao cliente
 //   OWNER_WHATSAPP       número do dono com DDI, ex: 5588994987680 (sem ele, o dono
 //                        não recebe o aviso de novo agendamento no WhatsApp)
 //   WEBHOOK_SECRET       (opcional) se definido, o trigger precisa enviar o mesmo valor
@@ -37,12 +40,19 @@ const env = (name: string) => (Deno.env.get(name) ?? '').trim()
 
 const BUSINESS_NAME = 'Azero Clean'
 
-type TriggerEvent = 'novo' | 'confirmado'
+// Localização mandada nas mensagens do cliente (dá para trocar pelos secrets sem publicar de novo)
+const location = () => ({
+  address:
+    env('BUSINESS_ADDRESS') || 'Rua Francisco Ananias de Vasconcelos, Tianguá - CE, 62320-000',
+  maps: env('BUSINESS_MAPS_URL') || 'https://maps.google.com/?q=-3.71912,-40.982385',
+})
+
+type TriggerEvent = 'novo' | 'confirmado' | 'lembrete'
 type AdminEvent = 'alterado' | 'reagendado' | 'cancelado'
 type Event = TriggerEvent | AdminEvent
 type Audience = 'dono' | 'cliente'
 
-const TRIGGER_EVENTS: Event[] = ['novo', 'confirmado']
+const TRIGGER_EVENTS: Event[] = ['novo', 'confirmado', 'lembrete']
 const ADMIN_EVENTS: Event[] = ['alterado', 'reagendado', 'cancelado']
 
 interface RequestBody {
@@ -178,6 +188,8 @@ function buildMessage(
 
   const note = body.note?.trim() ? `\n\n💬 ${body.note.trim()}` : ''
   const hello = `Olá, ${data.client_name}!`
+  const { address, maps } = location()
+  const where = `📍 *Endereço:* ${address}\n🗺️ *Como chegar:* ${maps}`
 
   if (event === 'novo' && audience === 'dono') {
     return (
@@ -194,7 +206,19 @@ function buildMessage(
       `${hello} 👋\n` +
       `Recebemos seu agendamento na *${BUSINESS_NAME}*.\n\n` +
       `${details}\n\n` +
+      `${where}\n\n` +
       `⏳ Agora é só aguardar: você recebe outra mensagem aqui assim que confirmarmos.`
+    )
+  }
+
+  if (event === 'lembrete') {
+    return (
+      `${hello} ⏰\n` +
+      `Faltam *15 minutos* para o seu horário na *${BUSINESS_NAME}*.\n\n` +
+      `🕐 Horário: ${data.time}\n` +
+      `🚗 Serviços: ${servicesText}\n\n` +
+      `${where}\n\n` +
+      `Estamos te esperando! Se tiver algum imprevisto, é só responder aqui.`
     )
   }
 
@@ -211,7 +235,7 @@ function buildMessage(
       `${hello} ✏️\n` +
       `Seu agendamento na *${BUSINESS_NAME}* foi ${scheduleOnly ? '*remarcado*' : '*alterado*'}.\n\n` +
       (changes.length ? `*O que mudou:*\n${changes.join('\n')}\n\n` : '') +
-      `*Como ficou:*\n${details}` +
+      `*Como ficou:*\n${details}\n\n${where}` +
       note +
       `\n\nSe algo não estiver bom para você, é só responder aqui.`
     )
@@ -229,7 +253,7 @@ function buildMessage(
   return (
     `${hello} ✅\n` +
     `Seu agendamento na *${BUSINESS_NAME}* foi confirmado.\n\n` +
-    `${details}` +
+    `${details}\n\n${where}` +
     note +
     `\n\nQualquer dúvida é só responder aqui. Até breve!`
   )
@@ -286,6 +310,9 @@ Deno.serve(async (req) => {
     if (error || !data) return json({ error: 'agendamento não encontrado' }, 404)
     if (event === 'confirmado' && data.status !== 'confirmado') {
       return json({ skipped: true, reason: 'status não é confirmado' })
+    }
+    if (event === 'lembrete' && (data.status === 'cancelado' || data.status === 'concluido')) {
+      return json({ skipped: true, reason: `agendamento ${data.status}` })
     }
 
     let servicesText = 'serviço'
