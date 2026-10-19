@@ -227,7 +227,7 @@ export type ClientNotice =
     }
   | { event: 'cancelado'; note?: string }
 
-// Manda WhatsApp para o cliente pela Edge Function (Evolution API ou Z-API), com o login do admin.
+// Manda WhatsApp para o cliente pela Edge Function (Evolution API), com o login do admin.
 export async function notifyClient(id: string, notice: ClientNotice): Promise<void> {
   const supabase = await getClient()
   const { data, error } = await supabase.functions.invoke('send-whatsapp', {

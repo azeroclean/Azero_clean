@@ -1,10 +1,10 @@
 -- ============================================================
--- Azero Clean - Triggers de WhatsApp (Z-API)
+-- Azero Clean - Triggers de WhatsApp (Evolution API)
 -- Chama a Edge Function "send-whatsapp":
 --   * novo agendamento (insert)        -> avisa o dono
 --   * status muda para 'confirmado'    -> avisa o cliente
 -- Rode no Supabase > SQL Editor (pode rodar de novo sem problema).
--- Passo a passo: supabase/ZAPI-SETUP.md
+-- Passo a passo: supabase/EVOLUTION-SETUP.md
 -- ============================================================
 
 -- Necessário para fazer chamadas HTTP a partir do banco
